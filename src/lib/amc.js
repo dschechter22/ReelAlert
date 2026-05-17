@@ -76,18 +76,8 @@ export async function geocodeZip(zip) {
  * Returns an array of { theatre, showtimes } from the location endpoint.
  */
 export async function getTheatresNearZip(zip, date) {
-  const { lat, lon } = await geocodeZip(zip)
-  const data = await getShowtimesByLocation(lat, lon, date)
-  const allShowtimes = data?._embedded?.showtimes ?? data?.showtimes ?? []
-
-  const theatreMap = new Map()
-  for (const s of allShowtimes) {
-    const t = s._embedded?.theatre ?? s.theatre
-    if (!t) continue
-    const id = t.id
-    if (!theatreMap.has(id)) theatreMap.set(id, { theatre: t, showtimes: [] })
-    theatreMap.get(id).showtimes.push(s)
-  }
-
-  return Array.from(theatreMap.values())
+  // Temporary: test basic /v2/theatres endpoint to verify API key access
+  const data = await getTheatres(1, 5)
+  const theatres = data?._embedded?.theatres ?? data?.theatres ?? []
+  return theatres.map((t) => ({ theatre: t, showtimes: [] }))
 }

@@ -150,7 +150,7 @@ CREATE TABLE IF NOT EXISTS public.movies (
   trailer_url          TEXT,
   genres               JSONB DEFAULT '[]',
   release_date         DATE,
-  cast                 JSONB DEFAULT '[]',
+  "cast"               JSONB DEFAULT '[]',
   director             JSONB,
   in_theaters_until    DATE,
   ratings_last_updated TIMESTAMPTZ,

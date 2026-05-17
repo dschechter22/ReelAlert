@@ -1,5 +1,3 @@
-import { supabase } from './supabase'
-
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 const PROXY_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/omdb-proxy`
 
@@ -11,19 +9,13 @@ export async function fetchOMDbRatings(imdbId) {
   if (_cache.has(imdbId)) return _cache.get(imdbId)
 
   try {
-    const { data: { session } } = await supabase.auth.getSession()
-    const token = session?.access_token ?? SUPABASE_ANON_KEY
-
+    // Pass apikey as a query param (not a header) so the browser sends a
+    // simple GET with no custom headers — avoiding a CORS preflight entirely.
     const url = new URL(PROXY_BASE)
     url.searchParams.set('imdb_id', imdbId)
+    url.searchParams.set('apikey', SUPABASE_ANON_KEY)
 
-    const res = await fetch(url.toString(), {
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${token}`,
-      },
-    })
-
+    const res = await fetch(url.toString())
     if (!res.ok) return null
     const data = await res.json()
     _cache.set(imdbId, data)

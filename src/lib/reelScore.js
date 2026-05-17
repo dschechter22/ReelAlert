@@ -1,11 +1,18 @@
 /**
- * ReelScore computation — based solely on TMDB score + genre/people preferences.
+ * ReelScore computation — weighted average of IMDb, RT, TMDB, Letterboxd
+ * adjusted by genre/people preferences.
+ *
+ * Source weights (redistributed when a source is unavailable):
+ *   IMDb       35%
+ *   RT Critic  30%
+ *   TMDB       20%
+ *   Letterboxd 15%
  *
  * Buckets:
- *   must-see            — good TMDB score AND a must-see genre or favorited person
- *   worth-watching      — good TMDB score, neutral genres
- *   if-youre-interested — mediocre TMDB score but not disqualified
- *   not-for-you         — low score, never genre, or excluded person
+ *   must-see            ≥ 90
+ *   worth-watching      ≥ 75
+ *   if-youre-interested ≥ 50
+ *   not-for-you         < 50, never genre, or excluded person
  */
 
 export const BUCKET_LABELS = {
@@ -15,14 +22,27 @@ export const BUCKET_LABELS = {
   'not-for-you': 'Not For You',
 }
 
+function weightedBase(movie) {
+  const sources = []
+  if (movie.imdb_score != null)
+    sources.push({ value: Math.round(movie.imdb_score * 10), weight: 0.35 })
+  if (movie.rt_critic != null)
+    sources.push({ value: movie.rt_critic, weight: 0.30 })
+  if (movie.tmdb_score != null && movie.tmdb_score > 0)
+    sources.push({ value: Math.round(movie.tmdb_score * 10), weight: 0.20 })
+  if (movie.letterboxd_score != null)
+    sources.push({ value: Math.round(movie.letterboxd_score * 20), weight: 0.15 })
+
+  if (!sources.length) return 50
+  const totalWeight = sources.reduce((s, x) => s + x.weight, 0)
+  return Math.round(sources.reduce((s, x) => s + x.value * x.weight, 0) / totalWeight)
+}
+
 /**
- * Compute a 0–100 ReelScore for a movie given user genre/people preferences.
- *
- * @param {object} movie      – must have tmdb_score, genres, cast, director
+ * @param {object} movie      – tmdb_score, imdb_score, rt_critic, letterboxd_score, genres, cast, director
  * @param {object} userPrefs
  *   - genrePreferences:   Array<{ genre_id, priority }>  priority: must_see | fine | never
  *   - peoplePreferences:  Array<{ tmdb_person_id, preference_type }>  favorite | excluded
- *
  * @returns {{ score, bucket, bucketLabel, breakdown }}
  */
 export function computeReelScore(movie, userPrefs = {}) {
@@ -39,8 +59,8 @@ export function computeReelScore(movie, userPrefs = {}) {
   const hasMustSeeGenre = mustSeeGenreIds.some((id) => movieGenreIds.includes(id))
 
   // People flags
-  const favoriteIds    = peoplePreferences.filter((p) => p.preference_type === 'favorite').map((p) => p.tmdb_person_id)
-  const excludedIds    = peoplePreferences.filter((p) => p.preference_type === 'excluded').map((p) => p.tmdb_person_id)
+  const favoriteIds = peoplePreferences.filter((p) => p.preference_type === 'favorite').map((p) => p.tmdb_person_id)
+  const excludedIds = peoplePreferences.filter((p) => p.preference_type === 'excluded').map((p) => p.tmdb_person_id)
   const hasFavoritePerson =
     favoriteIds.some((id) => movieCastIds.includes(id)) ||
     (directorId != null && favoriteIds.includes(directorId))
@@ -48,17 +68,14 @@ export function computeReelScore(movie, userPrefs = {}) {
     excludedIds.some((id) => movieCastIds.includes(id)) ||
     (directorId != null && excludedIds.includes(directorId))
 
-  // Base score: TMDB vote_average scaled to 0–100 (default 50 if missing)
-  const baseScore = movie.tmdb_score != null ? Math.round(movie.tmdb_score * 10) : 50
+  const baseScore = weightedBase(movie)
 
-  // Preference adjustments
   let score = baseScore
   if (hasMustSeeGenre)   score = Math.min(100, score + 10)
   if (hasFavoritePerson) score = Math.min(100, score + 15)
   if (hasNeverGenre)     score = Math.max(0,   score - 25)
   if (hasExcludedPerson) score = Math.max(0,   score - 30)
 
-  // Bucket
   let bucket
   if (hasNeverGenre || hasExcludedPerson) {
     bucket = 'not-for-you'
@@ -83,17 +100,17 @@ export function computeReelScore(movie, userPrefs = {}) {
       hasFavoritePerson,
       hasExcludedPerson,
       sources: {
-        tmdb: {
-          value: movie.tmdb_score,
-          displayValue: movie.tmdb_score != null ? `${movie.tmdb_score}/10` : 'N/A',
+        imdb: {
+          value: movie.imdb_score,
+          displayValue: movie.imdb_score != null ? `${movie.imdb_score}/10` : 'N/A',
         },
         rt_critic: {
           value: movie.rt_critic,
           displayValue: movie.rt_critic != null ? `${movie.rt_critic}%` : 'N/A',
         },
-        rt_audience: {
-          value: movie.rt_audience,
-          displayValue: movie.rt_audience != null ? `${movie.rt_audience}%` : 'N/A',
+        tmdb: {
+          value: movie.tmdb_score,
+          displayValue: movie.tmdb_score != null ? `${movie.tmdb_score}/10` : 'N/A',
         },
         letterboxd: {
           value: movie.letterboxd_score,

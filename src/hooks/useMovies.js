@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { getNowPlaying, getMovieDetails, posterUrl, backdropUrl, TMDB_GENRES } from '../lib/tmdb'
 import { MOCK_MOVIES, DEFAULT_MOCK_PREFS } from '../lib/mockData'
 import { computeReelScore } from '../lib/reelScore'
+import { fetchOMDbRatings } from '../lib/omdb'
 
 const GENRE_MAP = Object.fromEntries(TMDB_GENRES.map((g) => [g.id, g.name]))
 
@@ -38,9 +39,11 @@ function mapTMDBDetail(detail) {
   return {
     id: `tmdb-${detail.id}`,
     tmdb_id: detail.id,
+    imdb_id: detail.imdb_id || null,
     title: detail.title,
     synopsis: detail.overview,
     tmdb_score: detail.vote_average,
+    imdb_score: null,
     rt_critic: null,
     rt_audience: null,
     letterboxd_score: null,
@@ -73,7 +76,16 @@ async function fetchLiveTMDB(userPrefs) {
     return mapTMDBBasic(slice[i])
   })
 
-  return movies.map((m) => ({ ...m, ...computeReelScore(m, userPrefs) }))
+  // Enrich with IMDb + RT scores from OMDb (fails silently if key not set)
+  const omdbResults = await Promise.allSettled(
+    movies.map((m) => fetchOMDbRatings(m.imdb_id))
+  )
+  const enriched = movies.map((m, i) => {
+    const omdb = omdbResults[i].status === 'fulfilled' ? omdbResults[i].value : null
+    return { ...m, imdb_score: omdb?.imdb_score ?? null, rt_critic: omdb?.rt_critic ?? null }
+  })
+
+  return enriched.map((m) => ({ ...m, ...computeReelScore(m, userPrefs) }))
 }
 
 export function useMovies(userId) {

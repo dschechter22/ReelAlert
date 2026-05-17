@@ -92,7 +92,7 @@ export default function ReelScoreDrawer({ movie, onClose }) {
             <h3 className="font-heading font-semibold text-text text-base mb-3">Score Breakdown</h3>
             <div className="bg-surface rounded-2xl px-4 py-1">
               <div className="flex items-center justify-between py-2 border-b border-accent-secondary/10">
-                <span className="text-text font-body text-sm">TMDB base</span>
+                <span className="text-text font-body text-sm">Base score</span>
                 <span className="text-text font-body text-sm font-medium">{baseScore}/100</span>
               </div>
               {breakdown?.hasMustSeeGenre && (
@@ -135,7 +135,7 @@ export default function ReelScoreDrawer({ movie, onClose }) {
                     .map(([source, data]) => (
                       <div key={source} className="flex items-center justify-between py-2 border-b border-accent-secondary/10 last:border-0">
                         <span className="text-text font-body text-sm">
-                          {{ tmdb: 'TMDB', rt_critic: 'RT Critic', rt_audience: 'RT Audience', letterboxd: 'Letterboxd' }[source] || source}
+                          {{ imdb: 'IMDb', rt_critic: 'RT Critic', rt_audience: 'RT Audience', tmdb: 'TMDB', letterboxd: 'Letterboxd' }[source] || source}
                         </span>
                         <span className="text-text font-body text-sm font-medium">{data.displayValue}</span>
                       </div>

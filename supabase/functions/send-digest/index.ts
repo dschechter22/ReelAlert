@@ -163,8 +163,45 @@ Deno.serve(async (req: Request) => {
     return new Response('Method not allowed', { status: 405 })
   }
 
-  // Optionally gate on a secret header for security
-  const authHeader = req.headers.get('authorization')
+  const reqUrl = new URL(req.url)
+  const isTest = reqUrl.searchParams.get('test') === 'true'
+  const authHeader = req.headers.get('authorization') || ''
+
+  // Test mode: verify user JWT and send only to that user
+  if (isTest) {
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
+    const userClient = createClient(SUPABASE_URL, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    })
+    const { data: { user } } = await userClient.auth.getUser()
+    if (!user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    const phone = user.user_metadata?.phone_number
+    if (!phone) {
+      return new Response(JSON.stringify({ error: 'No phone number saved. Add your phone number in Settings first.' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    const testUser: UserRow = {
+      id: user.id,
+      phone_number: phone,
+      sms_cadence: user.user_metadata?.sms_cadence || 'weekly',
+    }
+
+    await sendDigestForUser(testUser)
+    return new Response(JSON.stringify({ sent: 1 }), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+
+  // Normal mode: require service role key (or no auth for cron)
   const expectedBearer = `Bearer ${SUPABASE_SERVICE_KEY}`
   if (authHeader && authHeader !== expectedBearer) {
     return new Response('Unauthorized', { status: 401 })

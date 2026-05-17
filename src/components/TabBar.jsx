@@ -46,8 +46,8 @@ export default function TabBar() {
     <nav
       className="fixed bottom-0 left-0 right-0 z-40 border-t"
       style={{
-        background: 'var(--color-surface)',
-        borderColor: 'var(--color-accent-secondary)',
+        background: 'rgb(var(--color-surface))',
+        borderColor: 'rgb(var(--color-accent-secondary) / 0.3)',
         paddingBottom: 'env(safe-area-inset-bottom)',
       }}
     >
@@ -58,7 +58,7 @@ export default function TabBar() {
             to={tab.to}
             className="flex-1 flex flex-col items-center gap-0.5 py-2.5 text-xs transition-colors"
             style={({ isActive }) => ({
-              color: isActive ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+              color: isActive ? 'rgb(var(--color-accent))' : 'rgb(var(--color-text-secondary))',
               fontFamily: 'var(--font-body)',
             })}
           >

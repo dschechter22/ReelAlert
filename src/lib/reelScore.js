@@ -62,9 +62,9 @@ export function computeReelScore(movie, userPrefs = {}) {
   let bucket
   if (hasNeverGenre || hasExcludedPerson) {
     bucket = 'not-for-you'
-  } else if ((hasMustSeeGenre || hasFavoritePerson) && score >= 65) {
+  } else if (score >= 90) {
     bucket = 'must-see'
-  } else if (score >= 65) {
+  } else if (score >= 75) {
     bucket = 'worth-watching'
   } else if (score >= 50) {
     bucket = 'if-youre-interested'

@@ -7,24 +7,32 @@
  * Required Supabase secret (set via `supabase secrets set AMC_API_KEY=...`):
  *   AMC_API_KEY
  *
- * Required frontend env var:
- *   VITE_SUPABASE_URL  (already needed for Supabase auth)
+ * Required frontend env vars:
+ *   VITE_SUPABASE_URL
+ *   VITE_SUPABASE_ANON_KEY
  */
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
-const PROXY_BASE = `${SUPABASE_URL}/functions/v1/amc-proxy`
+import { supabase } from './supabase'
+
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+const PROXY_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/amc-proxy`
 
 async function amcFetch(path, params = {}) {
+  // Use the user's session JWT so Supabase's gateway accepts the request.
+  // Falls back to the anon key if no session exists.
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token ?? SUPABASE_ANON_KEY
+
   const url = new URL(PROXY_BASE)
   url.searchParams.set('path', path)
   for (const [k, v] of Object.entries(params)) {
     url.searchParams.set(k, String(v))
   }
+
   const res = await fetch(url.toString(), {
     headers: {
       apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      Authorization: `Bearer ${token}`,
     },
   })
   if (!res.ok) throw new Error(`AMC proxy ${res.status}: ${path}`)
@@ -68,18 +76,8 @@ export async function geocodeZip(zip) {
  * Returns an array of { theatre, showtimes } from the location endpoint.
  */
 export async function getTheatresNearZip(zip, date) {
-  const { lat, lon } = await geocodeZip(zip)
-  const data = await getShowtimesByLocation(lat, lon, date)
-  const allShowtimes = data?._embedded?.showtimes ?? data?.showtimes ?? []
-
-  const theatreMap = new Map()
-  for (const s of allShowtimes) {
-    const t = s._embedded?.theatre ?? s.theatre
-    if (!t) continue
-    const id = t.id
-    if (!theatreMap.has(id)) theatreMap.set(id, { theatre: t, showtimes: [] })
-    theatreMap.get(id).showtimes.push(s)
-  }
-
-  return Array.from(theatreMap.values())
+  // Temporary: test basic /v2/theatres endpoint to verify API key access
+  const data = await getTheatres(1, 5)
+  const theatres = data?._embedded?.theatres ?? data?.theatres ?? []
+  return theatres.map((t) => ({ theatre: t, showtimes: [] }))
 }

@@ -1,55 +1,13 @@
-import { X, Star, Check, X as XIcon, Heart, AlertTriangle } from 'lucide-react'
+import { X, Star, Heart, AlertTriangle } from 'lucide-react'
 import BucketBadge from './BucketBadge'
-
-const SOURCE_LABELS = {
-  tmdb: 'TMDB',
-  rt_critic: 'RT Critic',
-  rt_audience: 'RT Audience',
-  letterboxd: 'Letterboxd',
-}
-
-function ScoreRow({ source, data }) {
-  if (!data) return null
-  const label = SOURCE_LABELS[source] || source
-  const passed = data.passed
-
-  return (
-    <div className="flex items-center justify-between py-2 border-b border-accent-secondary/10 last:border-0">
-      <div className="flex items-center gap-2">
-        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
-          passed ? 'bg-emerald-500/20' : 'bg-red-500/20'
-        }`}>
-          {passed
-            ? <Check size={12} className="text-emerald-400" />
-            : <XIcon size={12} className="text-red-400" />
-          }
-        </div>
-        <span className="text-text font-body text-sm">{label}</span>
-      </div>
-      <div className="text-right">
-        <span className={`font-body text-sm font-medium ${passed ? 'text-text' : 'text-text-secondary'}`}>
-          {data.actual ?? 'N/A'}
-        </span>
-        {data.required != null && (
-          <span className="text-text-secondary text-xs font-body ml-1">
-            (min {data.required})
-          </span>
-        )}
-      </div>
-    </div>
-  )
-}
 
 export default function ReelScoreDrawer({ movie, onClose }) {
   if (!movie) return null
 
   const { title, bucket, score, breakdown, posterGradient, poster_path, synopsis, genres, cast, director } = movie
-
   const posterBg = poster_path ? null : (posterGradient || 'from-gray-800 via-gray-700 to-gray-900')
 
-  const allThresholdResults = {
-    ...breakdown?.globalThresholds,
-  }
+  const baseScore = breakdown?.baseScore ?? score
 
   return (
     <>
@@ -82,9 +40,7 @@ export default function ReelScoreDrawer({ movie, onClose }) {
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <h2 className="font-heading font-bold text-text text-xl leading-tight mb-2">
-                {title}
-              </h2>
+              <h2 className="font-heading font-bold text-text text-xl leading-tight mb-2">{title}</h2>
               <BucketBadge bucket={bucket} className="mb-2" />
               <div className="flex items-baseline gap-1">
                 <span className="text-accent font-heading font-bold text-3xl">{score}</span>
@@ -107,54 +63,86 @@ export default function ReelScoreDrawer({ movie, onClose }) {
             </div>
           )}
 
-          {/* Genre & People flags */}
+          {/* Preference flags */}
           <div className="px-5 pb-4 flex flex-wrap gap-2">
             {breakdown?.hasMustSeeGenre && (
               <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-xs text-emerald-400 font-body">
-                <Star size={10} /> Must-See Genre
+                <Star size={10} /> Must-See Genre +10
               </span>
             )}
             {breakdown?.hasFavoritePerson && (
               <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-pink-500/10 border border-pink-500/20 rounded-full text-xs text-pink-400 font-body">
-                <Heart size={10} /> Favorite Cast/Director
+                <Heart size={10} /> Favorite Cast/Director +15
               </span>
             )}
             {breakdown?.hasNeverGenre && (
               <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-500/10 border border-red-500/20 rounded-full text-xs text-red-400 font-body">
-                <AlertTriangle size={10} /> Excluded Genre
+                <AlertTriangle size={10} /> Excluded Genre −25
               </span>
             )}
             {breakdown?.hasExcludedPerson && (
               <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-500/10 border border-red-500/20 rounded-full text-xs text-red-400 font-body">
-                <AlertTriangle size={10} /> Excluded Person
+                <AlertTriangle size={10} /> Excluded Person −30
               </span>
             )}
           </div>
 
-          {/* Rating breakdown */}
+          {/* Score breakdown */}
           <div className="px-5 pb-4">
-            <h3 className="font-heading font-semibold text-text text-base mb-3">Rating Breakdown</h3>
+            <h3 className="font-heading font-semibold text-text text-base mb-3">Score Breakdown</h3>
             <div className="bg-surface rounded-2xl px-4 py-1">
-              {Object.entries(allThresholdResults).map(([source, data]) => (
-                <ScoreRow key={source} source={source} data={data} />
-              ))}
-              {Object.keys(allThresholdResults).length === 0 && (
-                <div className="py-3 text-center text-text-secondary text-sm font-body">
-                  No thresholds configured. Set them in Settings.
+              <div className="flex items-center justify-between py-2 border-b border-accent-secondary/10">
+                <span className="text-text font-body text-sm">TMDB base</span>
+                <span className="text-text font-body text-sm font-medium">{baseScore}/100</span>
+              </div>
+              {breakdown?.hasMustSeeGenre && (
+                <div className="flex items-center justify-between py-2 border-b border-accent-secondary/10">
+                  <span className="text-emerald-400 font-body text-sm">Must-See Genre boost</span>
+                  <span className="text-emerald-400 font-body text-sm font-medium">+10</span>
                 </div>
               )}
+              {breakdown?.hasFavoritePerson && (
+                <div className="flex items-center justify-between py-2 border-b border-accent-secondary/10">
+                  <span className="text-pink-400 font-body text-sm">Favorite person boost</span>
+                  <span className="text-pink-400 font-body text-sm font-medium">+15</span>
+                </div>
+              )}
+              {breakdown?.hasNeverGenre && (
+                <div className="flex items-center justify-between py-2 border-b border-accent-secondary/10">
+                  <span className="text-red-400 font-body text-sm">Excluded genre penalty</span>
+                  <span className="text-red-400 font-body text-sm font-medium">−25</span>
+                </div>
+              )}
+              {breakdown?.hasExcludedPerson && (
+                <div className="flex items-center justify-between py-2 border-b border-accent-secondary/10">
+                  <span className="text-red-400 font-body text-sm">Excluded person penalty</span>
+                  <span className="text-red-400 font-body text-sm font-medium">−30</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between py-2">
+                <span className="text-text font-body text-sm font-semibold">ReelScore</span>
+                <span className="text-accent font-heading font-bold text-base">{score}/100</span>
+              </div>
             </div>
 
             {/* Raw scores */}
-            <h3 className="font-heading font-semibold text-text text-base mt-5 mb-3">All Scores</h3>
-            <div className="bg-surface rounded-2xl px-4 py-1">
-              {Object.entries(breakdown?.sources || {}).map(([source, data]) => (
-                <div key={source} className="flex items-center justify-between py-2 border-b border-accent-secondary/10 last:border-0">
-                  <span className="text-text font-body text-sm">{SOURCE_LABELS[source] || source}</span>
-                  <span className="text-text font-body text-sm font-medium">{data.displayValue}</span>
+            {Object.values(breakdown?.sources || {}).some((s) => s.value != null) && (
+              <>
+                <h3 className="font-heading font-semibold text-text text-base mt-5 mb-3">All Scores</h3>
+                <div className="bg-surface rounded-2xl px-4 py-1">
+                  {Object.entries(breakdown.sources)
+                    .filter(([, data]) => data.value != null)
+                    .map(([source, data]) => (
+                      <div key={source} className="flex items-center justify-between py-2 border-b border-accent-secondary/10 last:border-0">
+                        <span className="text-text font-body text-sm">
+                          {{ tmdb: 'TMDB', rt_critic: 'RT Critic', rt_audience: 'RT Audience', letterboxd: 'Letterboxd' }[source] || source}
+                        </span>
+                        <span className="text-text font-body text-sm font-medium">{data.displayValue}</span>
+                      </div>
+                    ))}
                 </div>
-              ))}
-            </div>
+              </>
+            )}
           </div>
 
           {/* Cast & Director */}

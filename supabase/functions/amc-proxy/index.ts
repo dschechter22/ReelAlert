@@ -12,7 +12,7 @@
  */
 
 const AMC_BASE = 'https://api.amctheatres.com'
-const AMC_API_KEY = Deno.env.get('AMC_API_KEY')!
+const AMC_API_KEY = Deno.env.get('AMC_API_KEY')
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -27,6 +27,13 @@ Deno.serve(async (req: Request) => {
 
   if (req.method !== 'GET') {
     return new Response('Method not allowed', { status: 405, headers: CORS })
+  }
+
+  if (!AMC_API_KEY) {
+    return new Response(JSON.stringify({ error: 'AMC_API_KEY secret is not configured' }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json', ...CORS },
+    })
   }
 
   const reqUrl = new URL(req.url)

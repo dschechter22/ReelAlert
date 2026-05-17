@@ -33,7 +33,7 @@ echo "Linking project..."
 supabase link --project-ref "$SUPABASE_PROJECT_REF"
 
 echo "Deploying edge functions..."
-supabase functions deploy amc-proxy
+supabase functions deploy amc-proxy --no-verify-jwt
 supabase functions deploy send-digest
 
 echo "Setting secrets..."

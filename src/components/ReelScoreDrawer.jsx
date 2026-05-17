@@ -134,20 +134,20 @@ export default function ReelScoreDrawer({ movie, onClose }) {
             </div>
 
             {/* Raw scores */}
-            {Object.values(breakdown?.sources || {}).some((s) => s.value != null) && (
+            {breakdown?.sources && (
               <>
                 <h3 className="font-heading font-semibold text-text text-base mt-5 mb-3">All Scores</h3>
                 <div className="bg-surface rounded-2xl px-4 py-1">
-                  {Object.entries(breakdown.sources)
-                    .filter(([, data]) => data.value != null)
-                    .map(([source, data]) => (
-                      <div key={source} className="flex items-center justify-between py-2 border-b border-accent-secondary/10 last:border-0">
-                        <span className="text-text font-body text-sm">
-                          {{ imdb: 'IMDb', rt_critic: 'RT Critic', rt_audience: 'RT Audience', tmdb: 'TMDB', letterboxd: 'Letterboxd' }[source] || source}
-                        </span>
-                        <span className="text-text font-body text-sm font-medium">{data.displayValue}</span>
-                      </div>
-                    ))}
+                  {Object.entries(breakdown.sources).map(([source, data]) => (
+                    <div key={source} className="flex items-center justify-between py-2 border-b border-accent-secondary/10 last:border-0">
+                      <span className="text-text font-body text-sm">
+                        {{ imdb: 'IMDb', rt_critic: 'RT Critic', letterboxd: 'Letterboxd' }[source] || source}
+                      </span>
+                      <span className={`font-body text-sm font-medium ${data.value != null ? 'text-text' : 'text-text-secondary/40'}`}>
+                        {data.displayValue}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </>
             )}

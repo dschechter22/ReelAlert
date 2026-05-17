@@ -1,45 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* ============================================================
-   Theme CSS Variables
+   Theme CSS Variables (RGB channels for Tailwind opacity support)
    ============================================================ */
 
 /* Minimalist Light (default) */
 [data-theme="minimalist-light"] {
-  --color-bg: #FAFAF8;
-  --color-surface: #F2EFE9;
-  --color-accent: #C17F24;
-  --color-accent-secondary: #E8D5B0;
-  --color-text: #1A1A18;
-  --color-text-secondary: #6B6560;
+  --color-bg: 250 250 248;
+  --color-surface: 242 239 233;
+  --color-accent: 193 127 36;
+  --color-accent-secondary: 232 213 176;
+  --color-text: 26 26 24;
+  --color-text-secondary: 107 101 96;
 }
 
 /* Minimalist Dark */
 [data-theme="minimalist-dark"] {
-  --color-bg: #1A1814;
-  --color-surface: #252219;
-  --color-accent: #D4922E;
-  --color-accent-secondary: #8C6A3A;
-  --color-text: #F2EFE9;
-  --color-text-secondary: #A09890;
+  --color-bg: 26 24 20;
+  --color-surface: 37 34 25;
+  --color-accent: 212 146 46;
+  --color-accent-secondary: 140 106 58;
+  --color-text: 242 239 233;
+  --color-text-secondary: 160 152 144;
 }
 
 /* Cinematic Light */
 [data-theme="cinematic-light"] {
-  --color-bg: #FAF7F2;
-  --color-surface: #F0E8E0;
-  --color-accent: #9B1F1F;
-  --color-accent-secondary: #C9A84C;
-  --color-text: #1A1212;
-  --color-text-secondary: #6B5A5A;
+  --color-bg: 250 247 242;
+  --color-surface: 240 232 224;
+  --color-accent: 155 31 31;
+  --color-accent-secondary: 201 168 76;
+  --color-text: 26 18 18;
+  --color-text-secondary: 107 90 90;
 }
 
 /* Cinematic Dark */
 [data-theme="cinematic-dark"] {
-  --color-bg: #120D0D;
-  --color-surface: #1E1515;
-  --color-accent: #C42B2B;
-  --color-accent-secondary: #D4A832;
-  --color-text: #F5EDEA;
-  --color-text-secondary: #9A8080;
+  --color-bg: 18 13 13;
+  --color-surface: 30 21 21;
+  --color-accent: 196 43 43;
+  --color-accent-secondary: 212 168 50;
+  --color-text: 245 237 234;
+  --color-text-secondary: 154 128 128;
 }
 
 /* ============================================================
@@ -60,19 +64,13 @@
    Base Styles
    ============================================================ */
 
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
 html {
   scroll-behavior: smooth;
 }
 
 body {
-  background-color: var(--color-bg);
-  color: var(--color-text);
+  background-color: rgb(var(--color-bg));
+  color: rgb(var(--color-text));
   font-family: var(--font-body);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
@@ -94,11 +92,11 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--color-bg);
+  background: rgb(var(--color-bg));
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-accent-secondary);
+  background: rgb(var(--color-accent-secondary));
   border-radius: 3px;
 }
 
@@ -133,13 +131,30 @@ h1, h2, h3, h4, h5, h6 {
   to { transform: scale(1); opacity: 1; }
 }
 
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 /* Range input styling */
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
   height: 4px;
-  background: var(--color-accent-secondary);
+  background: rgb(var(--color-accent-secondary));
   border-radius: 2px;
   outline: none;
 }
@@ -150,9 +165,9 @@ input[type="range"]::-webkit-slider-thumb {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: var(--color-accent);
+  background: rgb(var(--color-accent));
   cursor: pointer;
-  border: 2px solid var(--color-bg);
+  border: 2px solid rgb(var(--color-bg));
   box-shadow: 0 1px 4px rgba(0,0,0,0.2);
 }
 
@@ -160,7 +175,7 @@ input[type="range"]::-moz-range-thumb {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: var(--color-accent);
+  background: rgb(var(--color-accent));
   cursor: pointer;
-  border: 2px solid var(--color-bg);
+  border: 2px solid rgb(var(--color-bg));
 }

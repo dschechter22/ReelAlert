@@ -1,12 +1,9 @@
 /**
- * ReelScore computation — weighted average of IMDb, RT, TMDB, Letterboxd
- * adjusted by genre/people preferences.
+ * ReelScore computation — IMDb, RT Critic, and Letterboxd, weighted by user
+ * preference, adjusted by genre/people preferences.
  *
- * Source weights (redistributed when a source is unavailable):
- *   IMDb       35%
- *   RT Critic  30%
- *   TMDB       20%
- *   Letterboxd 15%
+ * Default weights: IMDb 33%, RT 33%, Letterboxd 34%
+ * Weights redistribute automatically when a source has no data.
  *
  * Buckets:
  *   must-see            ≥ 90
@@ -22,16 +19,16 @@ export const BUCKET_LABELS = {
   'not-for-you': 'Not For You',
 }
 
-function weightedBase(movie) {
+export const DEFAULT_SCORING_WEIGHTS = { imdb: 33, rt: 33, lb: 34 }
+
+function weightedBase(movie, weights = DEFAULT_SCORING_WEIGHTS) {
   const sources = []
   if (movie.imdb_score != null)
-    sources.push({ value: Math.round(movie.imdb_score * 10), weight: 0.35 })
+    sources.push({ value: Math.round(movie.imdb_score * 10), weight: weights.imdb })
   if (movie.rt_critic != null)
-    sources.push({ value: movie.rt_critic, weight: 0.30 })
-  if (movie.tmdb_score != null && movie.tmdb_score > 0)
-    sources.push({ value: Math.round(movie.tmdb_score * 10), weight: 0.20 })
+    sources.push({ value: movie.rt_critic, weight: weights.rt })
   if (movie.letterboxd_score != null)
-    sources.push({ value: Math.round(movie.letterboxd_score * 20), weight: 0.15 })
+    sources.push({ value: Math.round(movie.letterboxd_score * 20), weight: weights.lb })
 
   if (!sources.length) return 50
   const totalWeight = sources.reduce((s, x) => s + x.weight, 0)
@@ -39,26 +36,29 @@ function weightedBase(movie) {
 }
 
 /**
- * @param {object} movie      – tmdb_score, imdb_score, rt_critic, letterboxd_score, genres, cast, director
+ * @param {object} movie      – imdb_score, rt_critic, letterboxd_score, genres, cast, director
  * @param {object} userPrefs
  *   - genrePreferences:   Array<{ genre_id, priority }>  priority: must_see | fine | never
  *   - peoplePreferences:  Array<{ tmdb_person_id, preference_type }>  favorite | excluded
+ *   - scoringWeights:     { imdb, rt, lb }  raw weight units (normalized internally)
  * @returns {{ score, bucket, bucketLabel, breakdown }}
  */
 export function computeReelScore(movie, userPrefs = {}) {
-  const { genrePreferences = [], peoplePreferences = [] } = userPrefs
+  const {
+    genrePreferences = [],
+    peoplePreferences = [],
+    scoringWeights = DEFAULT_SCORING_WEIGHTS,
+  } = userPrefs
 
   const movieGenreIds = (movie.genres || []).map((g) => (typeof g === 'object' ? g.id : g))
   const movieCastIds = (movie.cast || []).map((c) => (typeof c === 'object' ? c.id : c))
   const directorId = movie.director?.id ?? movie.director
 
-  // Genre flags
   const neverGenreIds   = genrePreferences.filter((gp) => gp.priority === 'never').map((gp) => gp.genre_id)
   const mustSeeGenreIds = genrePreferences.filter((gp) => gp.priority === 'must_see').map((gp) => gp.genre_id)
   const hasNeverGenre   = neverGenreIds.some((id) => movieGenreIds.includes(id))
   const hasMustSeeGenre = mustSeeGenreIds.some((id) => movieGenreIds.includes(id))
 
-  // People flags
   const favoriteIds = peoplePreferences.filter((p) => p.preference_type === 'favorite').map((p) => p.tmdb_person_id)
   const excludedIds = peoplePreferences.filter((p) => p.preference_type === 'excluded').map((p) => p.tmdb_person_id)
   const hasFavoritePerson =
@@ -68,7 +68,7 @@ export function computeReelScore(movie, userPrefs = {}) {
     excludedIds.some((id) => movieCastIds.includes(id)) ||
     (directorId != null && excludedIds.includes(directorId))
 
-  const baseScore = weightedBase(movie)
+  const baseScore = weightedBase(movie, scoringWeights)
 
   let score = baseScore
   if (hasMustSeeGenre)   score = Math.min(100, score + 10)
@@ -89,6 +89,14 @@ export function computeReelScore(movie, userPrefs = {}) {
     bucket = 'not-for-you'
   }
 
+  // Compute effective percentages for display
+  const total = (scoringWeights.imdb ?? 0) + (scoringWeights.rt ?? 0) + (scoringWeights.lb ?? 0) || 1
+  const pct = {
+    imdb: Math.round(scoringWeights.imdb / total * 100),
+    rt:   Math.round(scoringWeights.rt   / total * 100),
+    lb:   Math.round(scoringWeights.lb   / total * 100),
+  }
+
   return {
     score,
     bucket,
@@ -99,6 +107,7 @@ export function computeReelScore(movie, userPrefs = {}) {
       hasNeverGenre,
       hasFavoritePerson,
       hasExcludedPerson,
+      weightPct: pct,
       sources: {
         imdb: {
           value: movie.imdb_score,
@@ -107,10 +116,6 @@ export function computeReelScore(movie, userPrefs = {}) {
         rt_critic: {
           value: movie.rt_critic,
           displayValue: movie.rt_critic != null ? `${movie.rt_critic}%` : 'N/A',
-        },
-        tmdb: {
-          value: movie.tmdb_score,
-          displayValue: movie.tmdb_score != null ? `${movie.tmdb_score}/10` : 'N/A',
         },
         letterboxd: {
           value: movie.letterboxd_score,

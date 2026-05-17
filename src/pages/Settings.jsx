@@ -132,7 +132,7 @@ export default function Settings() {
     <div className="min-h-screen bg-bg pb-28">
       {/* Header */}
       <header className="sticky top-0 z-20 border-b border-accent-secondary/15 px-4 py-4 pt-safe"
-        style={{ background: 'color-mix(in srgb, var(--color-bg) 90%, transparent)', backdropFilter: 'blur(12px)' }}>
+        style={{ background: 'rgb(var(--color-bg) / 0.9)', backdropFilter: 'blur(12px)' }}>
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <h1 className="font-heading font-bold text-text text-xl">Settings</h1>
           <button

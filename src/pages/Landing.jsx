@@ -88,7 +88,7 @@ export default function Landing() {
     <div className="min-h-screen bg-bg font-body">
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-20 border-b border-accent-secondary/15 backdrop-blur-sm"
-        style={{ background: 'color-mix(in srgb, var(--color-bg) 85%, transparent)' }}>
+        style={{ background: 'rgb(var(--color-bg) / 0.85)' }}>
         <div className="max-w-5xl mx-auto px-5 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Film size={22} className="text-accent" />

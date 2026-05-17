@@ -2,7 +2,7 @@ import { ChevronRight, Bookmark, BookmarkCheck } from 'lucide-react'
 import BucketBadge from './BucketBadge'
 
 export default function MovieCard({ movie, onOpenDrawer, onWatchlistToggle, inWatchlist }) {
-  const { title, genres, score, bucket, posterGradient, poster_path } = movie
+  const { title, genres, score, bucket, posterGradient, poster_path, imdb_score, rt_critic, letterboxd_score } = movie
 
   const posterBg = poster_path
     ? null
@@ -52,6 +52,27 @@ export default function MovieCard({ movie, onOpenDrawer, onWatchlistToggle, inWa
           </div>
 
           <BucketBadge bucket={bucket} className="mb-2" />
+
+          {/* Source scores */}
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {imdb_score != null && (
+              <span className="text-xs font-body text-text-secondary">
+                <span className="text-text-secondary/60">IMDb</span> {imdb_score}
+              </span>
+            )}
+            {rt_critic != null && (
+              <span className="text-xs font-body text-text-secondary">
+                {imdb_score != null && <span className="mr-1.5 text-text-secondary/30">·</span>}
+                <span className="text-text-secondary/60">RT</span> {rt_critic}%
+              </span>
+            )}
+            {letterboxd_score != null && (
+              <span className="text-xs font-body text-text-secondary">
+                {(imdb_score != null || rt_critic != null) && <span className="mr-1.5 text-text-secondary/30">·</span>}
+                <span className="text-text-secondary/60">LB</span> {letterboxd_score}
+              </span>
+            )}
+          </div>
 
           {/* Genre tags */}
           <div className="flex flex-wrap gap-1 mb-2">

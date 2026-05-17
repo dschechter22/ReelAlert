@@ -6,9 +6,8 @@ import BucketBadge from '../components/BucketBadge'
 import TabBar from '../components/TabBar'
 
 const SOURCE_LABELS = {
-  tmdb: 'TMDB',
+  imdb: 'IMDb',
   rt_critic: 'RT Critic',
-  rt_audience: 'RT Audience',
   letterboxd: 'Letterboxd',
 }
 
@@ -107,7 +106,14 @@ export default function MovieDetail() {
           <h2 className="font-heading font-semibold text-text text-lg mb-3">Score Breakdown</h2>
           <div className="bg-surface rounded-2xl px-4 py-1">
             <div className="flex justify-between py-3 border-b border-accent-secondary/10">
-              <span className="text-text font-body text-sm">TMDB base</span>
+              <div>
+                <span className="text-text font-body text-sm">Base score</span>
+                {breakdown?.weightPct && (
+                  <span className="ml-2 text-text-secondary font-body text-xs">
+                    IMDb {breakdown.weightPct.imdb}% · RT {breakdown.weightPct.rt}% · LB {breakdown.weightPct.lb}%
+                  </span>
+                )}
+              </div>
               <span className="text-text font-body text-sm font-semibold">{breakdown?.baseScore ?? score}/100</span>
             </div>
             {breakdown?.hasMustSeeGenre && (
@@ -141,22 +147,20 @@ export default function MovieDetail() {
           </div>
         </div>
 
-        {/* All scores — only shown when external data is available */}
-        {Object.values(breakdown?.sources || {}).some((s) => s.value != null) && (
-          <div className="mb-6">
-            <h2 className="font-heading font-semibold text-text text-lg mb-3">All Scores</h2>
-            <div className="bg-surface rounded-2xl px-4 py-1">
-              {Object.entries(breakdown.sources)
-                .filter(([, data]) => data.value != null)
-                .map(([source, data]) => (
-                  <div key={source} className="flex justify-between py-3 border-b border-accent-secondary/10 last:border-0">
-                    <span className="text-text font-body text-sm">{SOURCE_LABELS[source] || source}</span>
-                    <span className="text-text font-body text-sm font-semibold">{data.displayValue}</span>
-                  </div>
-                ))}
-            </div>
+        {/* All scores */}
+        <div className="mb-6">
+          <h2 className="font-heading font-semibold text-text text-lg mb-3">All Scores</h2>
+          <div className="bg-surface rounded-2xl px-4 py-1">
+            {Object.entries(breakdown?.sources || SOURCE_LABELS).map(([source, data]) => (
+              <div key={source} className="flex justify-between py-3 border-b border-accent-secondary/10 last:border-0">
+                <span className="text-text font-body text-sm">{SOURCE_LABELS[source] || source}</span>
+                <span className={`font-body text-sm font-semibold ${data?.value != null ? 'text-text' : 'text-text-secondary/40'}`}>
+                  {data?.displayValue ?? 'N/A'}
+                </span>
+              </div>
+            ))}
           </div>
-        )}
+        </div>
 
         {/* Cast & crew */}
         {(cast?.length > 0 || director) && (

@@ -82,8 +82,12 @@ export default function Theaters() {
       setSelectedTheatre(mapped[0])
       setShowtimes(mapped[0].showtimes)
     } catch (err) {
-      console.warn('AMC API error, showing demo data:', err.message)
-      setError(err.message)
+      const msg = err.message?.includes('503')
+        ? 'AMC API key not configured — showing demo data.'
+        : err.message?.includes('403')
+        ? 'AMC API key invalid or access denied — showing demo data.'
+        : err.message
+      setError(msg)
       setUsingMock(true)
       setTheatres(MOCK_THEATERS)
       setSelectedTheatre(MOCK_THEATERS[0])

@@ -7,24 +7,32 @@
  * Required Supabase secret (set via `supabase secrets set AMC_API_KEY=...`):
  *   AMC_API_KEY
  *
- * Required frontend env var:
- *   VITE_SUPABASE_URL  (already needed for Supabase auth)
+ * Required frontend env vars:
+ *   VITE_SUPABASE_URL
+ *   VITE_SUPABASE_ANON_KEY
  */
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
-const PROXY_BASE = `${SUPABASE_URL}/functions/v1/amc-proxy`
+import { supabase } from './supabase'
+
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+const PROXY_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/amc-proxy`
 
 async function amcFetch(path, params = {}) {
+  // Use the user's session JWT so Supabase's gateway accepts the request.
+  // Falls back to the anon key if no session exists.
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token ?? SUPABASE_ANON_KEY
+
   const url = new URL(PROXY_BASE)
   url.searchParams.set('path', path)
   for (const [k, v] of Object.entries(params)) {
     url.searchParams.set(k, String(v))
   }
+
   const res = await fetch(url.toString(), {
     headers: {
       apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      Authorization: `Bearer ${token}`,
     },
   })
   if (!res.ok) throw new Error(`AMC proxy ${res.status}: ${path}`)

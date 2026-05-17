@@ -7,7 +7,7 @@ import TabBar from '../components/TabBar'
 import GenrePicker from '../components/GenrePicker'
 import PeopleSearch from '../components/PeopleSearch'
 import SMSPreview from '../components/SMSPreview'
-import { ChevronRight, LogOut, Bell, Palette, Users, Film, Phone } from 'lucide-react'
+import { ChevronRight, LogOut, Bell, Palette, Users, Film, Phone, Send, RefreshCw } from 'lucide-react'
 
 const THEME_OPTIONS = [
   { value: 'minimalist-light', label: 'Minimalist Light', desc: 'Clean & warm' },
@@ -27,6 +27,8 @@ const CADENCE_OPTIONS = [
   { value: 'biweekly', label: 'Bi-weekly' },
 ]
 
+const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
 function SectionHeader({ icon: Icon, title }) {
   return (
     <div className="flex items-center gap-2.5 mb-4 mt-6 first:mt-0">
@@ -44,10 +46,13 @@ export default function Settings() {
 
   const [cadence, setCadence] = useState('weekly')
   const [smsTime, setSmsTime] = useState('10:00')
+  const [smsDay, setSmsDay] = useState(1)
   const [phone, setPhone] = useState('')
   const [zip, setZip] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [testSmsSending, setTestSmsSending] = useState(false)
+  const [testSmsResult, setTestSmsResult] = useState(null)
 
   // Genre preferences
   const [genrePrefs, setGenrePrefs] = useState(DEFAULT_MOCK_PREFS.genrePreferences)
@@ -56,11 +61,20 @@ export default function Settings() {
   const [peoplePref, setPeoplePref] = useState(DEFAULT_MOCK_PREFS.peoplePreferences)
 
   useEffect(() => {
-    if (user) {
-      setPhone(user.user_metadata?.phone_number || '')
-      setZip(user.user_metadata?.zip_code || '')
-      setCadence(user.user_metadata?.sms_cadence || 'weekly')
-    }
+    if (!user) return
+    setPhone(user.user_metadata?.phone_number || '')
+    setZip(user.user_metadata?.zip_code || '')
+    setCadence(user.user_metadata?.sms_cadence || 'weekly')
+    setSmsTime(user.user_metadata?.sms_time || '10:00')
+    setSmsDay(user.user_metadata?.sms_day ?? 1)
+
+    Promise.all([
+      supabase.from('user_genre_preferences').select('*').eq('user_id', user.id),
+      supabase.from('user_people_preferences').select('*').eq('user_id', user.id),
+    ]).then(([genreRes, peopleRes]) => {
+      if (genreRes.data?.length) setGenrePrefs(genreRes.data)
+      if (peopleRes.data?.length) setPeoplePref(peopleRes.data)
+    })
   }, [user])
 
   async function handleSave() {
@@ -69,7 +83,7 @@ export default function Settings() {
       // Save to Supabase if user exists
       if (user) {
         await supabase.auth.updateUser({
-          data: { phone_number: phone, zip_code: zip, sms_cadence: cadence, sms_time: smsTime }
+          data: { phone_number: phone, zip_code: zip, sms_cadence: cadence, sms_time: smsTime, sms_day: smsDay }
         })
         await supabase.from('user_genre_preferences').upsert(
           genrePrefs.map((gp) => ({ ...gp, user_id: user.id })),
@@ -86,6 +100,33 @@ export default function Settings() {
       console.error('Save error:', err)
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleTestSMS() {
+    if (!phone) return
+    setTestSmsSending(true)
+    setTestSmsResult(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-digest?test=true`
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json',
+        },
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || `Error ${res.status}`)
+      setTestSmsResult('success')
+    } catch (err) {
+      setTestSmsResult(err.message || 'Failed to send test message')
+    } finally {
+      setTestSmsSending(false)
+      setTimeout(() => setTestSmsResult(null), 5000)
     }
   }
 
@@ -160,6 +201,26 @@ export default function Settings() {
               ))}
             </div>
           </div>
+          {(cadence === 'weekly' || cadence === 'biweekly') && (
+            <div>
+              <label className="block text-text-secondary text-xs font-body uppercase tracking-wide mb-2">Send day</label>
+              <div className="flex gap-1.5">
+                {DAYS_OF_WEEK.map((day, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setSmsDay(i)}
+                    className={`flex-1 py-1.5 rounded-xl text-xs font-body font-medium border transition-colors ${
+                      smsDay === i
+                        ? 'bg-accent/15 text-accent border-accent/30'
+                        : 'bg-bg text-text-secondary border-accent-secondary/20 hover:border-accent/30'
+                    }`}
+                  >
+                    {day}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div>
             <label className="block text-text-secondary text-xs font-body uppercase tracking-wide mb-2">Send time</label>
             <input
@@ -168,6 +229,21 @@ export default function Settings() {
               onChange={(e) => setSmsTime(e.target.value)}
               className="w-full bg-bg border border-accent-secondary/20 rounded-xl px-4 py-2.5 text-text font-body text-sm focus:outline-none focus:border-accent/40 transition-colors"
             />
+          </div>
+          <div>
+            <button
+              onClick={handleTestSMS}
+              disabled={testSmsSending || !phone}
+              className="w-full py-2.5 rounded-xl text-sm font-body font-medium border transition-colors bg-bg border-accent/30 text-accent hover:bg-accent/5 disabled:opacity-40 flex items-center justify-center gap-2"
+            >
+              {testSmsSending ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
+              {testSmsSending ? 'Sending…' : 'Send Test Text'}
+            </button>
+            {testSmsResult && (
+              <p className={`text-xs font-body mt-2 text-center ${testSmsResult === 'success' ? 'text-emerald-400' : 'text-red-400'}`}>
+                {testSmsResult === 'success' ? '✓ Test message sent!' : testSmsResult}
+              </p>
+            )}
           </div>
         </div>
 

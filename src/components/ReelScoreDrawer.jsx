@@ -8,6 +8,7 @@ export default function ReelScoreDrawer({ movie, onClose }) {
   const posterBg = poster_path ? null : (posterGradient || 'from-gray-800 via-gray-700 to-gray-900')
 
   const baseScore = breakdown?.baseScore ?? score
+  const pct = breakdown?.weightPct
 
   return (
     <>
@@ -92,7 +93,14 @@ export default function ReelScoreDrawer({ movie, onClose }) {
             <h3 className="font-heading font-semibold text-text text-base mb-3">Score Breakdown</h3>
             <div className="bg-surface rounded-2xl px-4 py-1">
               <div className="flex items-center justify-between py-2 border-b border-accent-secondary/10">
-                <span className="text-text font-body text-sm">Base score</span>
+                <div>
+                  <span className="text-text font-body text-sm">Base score</span>
+                  {pct && (
+                    <span className="ml-2 text-text-secondary font-body text-xs">
+                      IMDb {pct.imdb}% · RT {pct.rt}% · LB {pct.lb}%
+                    </span>
+                  )}
+                </div>
                 <span className="text-text font-body text-sm font-medium">{baseScore}/100</span>
               </div>
               {breakdown?.hasMustSeeGenre && (

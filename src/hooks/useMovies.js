@@ -82,7 +82,12 @@ async function fetchLiveTMDB(userPrefs) {
   )
   const enriched = movies.map((m, i) => {
     const omdb = omdbResults[i].status === 'fulfilled' ? omdbResults[i].value : null
-    return { ...m, imdb_score: omdb?.imdb_score ?? null, rt_critic: omdb?.rt_critic ?? null }
+    return {
+      ...m,
+      imdb_score: omdb?.imdb_score ?? null,
+      rt_critic: omdb?.rt_critic ?? null,
+      letterboxd_score: omdb?.letterboxd_score ?? null,
+    }
   })
 
   return enriched.map((m) => ({ ...m, ...computeReelScore(m, userPrefs) }))
@@ -124,14 +129,18 @@ export function useMovies(userId) {
 }
 
 async function fetchUserPrefs(userId) {
-  const [genrePrefsRes, peoplePrefsRes] = await Promise.all([
+  const [genrePrefsRes, peoplePrefsRes, { data: { user } }] = await Promise.all([
     supabase.from('user_genre_preferences').select('*').eq('user_id', userId),
     supabase.from('user_people_preferences').select('*').eq('user_id', userId),
+    supabase.auth.getUser(),
   ])
+
+  const sw = user?.user_metadata?.scoring_weights ?? { imdb: 33, rt: 33, lb: 34 }
 
   return {
     genrePreferences: genrePrefsRes.data?.length ? genrePrefsRes.data : DEFAULT_MOCK_PREFS.genrePreferences,
     peoplePreferences: peoplePrefsRes.data || [],
+    scoringWeights: sw,
   }
 }
 

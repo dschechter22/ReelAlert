@@ -1,9 +1,11 @@
 /**
- * OMDb API proxy — fetches IMDb + Rotten Tomatoes scores server-side
- * so the OMDb API key is never exposed to the browser.
+ * Ratings proxy — fetches IMDb, RT (via OMDb), and Letterboxd scores
+ * server-side so API keys and scraping stay out of the browser.
  *
  * Usage:
  *   GET /functions/v1/omdb-proxy?imdb_id=tt1234567
+ *
+ * Returns: { imdb_score, rt_critic, letterboxd_score }
  *
  * Required Supabase secret:
  *   OMDB_API_KEY
@@ -15,6 +17,35 @@ const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+async function fetchLetterboxdRating(imdbId: string): Promise<number | null> {
+  try {
+    const res = await fetch(`https://letterboxd.com/imdb/${imdbId}/`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ReelAlert/1.0; +https://reelalert.app)' },
+      redirect: 'follow',
+    })
+    if (!res.ok) return null
+    const html = await res.text()
+
+    // Try JSON-LD structured data first (most reliable)
+    const ldMatch = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)
+    if (ldMatch) {
+      try {
+        const ld = JSON.parse(ldMatch[1])
+        const rating = ld?.aggregateRating?.ratingValue
+        if (rating != null) return parseFloat(rating)
+      } catch { /* fall through */ }
+    }
+
+    // Fallback: meta tag "X.XX out of 5"
+    const metaMatch = html.match(/content="([\d.]+) out of 5"/)
+    if (metaMatch) return parseFloat(metaMatch[1])
+
+    return null
+  } catch {
+    return null
+  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -38,29 +69,18 @@ Deno.serve(async (req: Request) => {
     })
   }
 
-  try {
-    const res = await fetch(`https://www.omdbapi.com/?i=${imdbId}&apikey=${OMDB_API_KEY}`)
-    const data = await res.json()
+  // Fetch OMDb and Letterboxd in parallel
+  const [omdbRes, letterboxdScore] = await Promise.all([
+    fetch(`https://www.omdbapi.com/?i=${imdbId}&apikey=${OMDB_API_KEY}`).then((r) => r.json()).catch(() => null),
+    fetchLetterboxdRating(imdbId),
+  ])
 
-    if (data.Response === 'False') {
-      return new Response(JSON.stringify({ error: data.Error }), {
-        status: 404,
-        headers: { 'Content-Type': 'application/json', ...CORS },
-      })
-    }
+  const rtEntry = (omdbRes?.Ratings || []).find((r: any) => r.Source === 'Rotten Tomatoes')
+  const imdbRating = omdbRes?.imdbRating && omdbRes.imdbRating !== 'N/A' ? parseFloat(omdbRes.imdbRating) : null
+  const rtCritic = rtEntry ? parseInt(rtEntry.Value.replace('%', ''), 10) : null
 
-    const rtEntry = (data.Ratings || []).find((r: any) => r.Source === 'Rotten Tomatoes')
-    const imdbRating = data.imdbRating && data.imdbRating !== 'N/A' ? parseFloat(data.imdbRating) : null
-    const rtCritic = rtEntry ? parseInt(rtEntry.Value.replace('%', ''), 10) : null
-
-    return new Response(JSON.stringify({ imdb_score: imdbRating, rt_critic: rtCritic }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json', ...CORS },
-    })
-  } catch (err) {
-    return new Response(JSON.stringify({ error: String(err) }), {
-      status: 502,
-      headers: { 'Content-Type': 'application/json', ...CORS },
-    })
-  }
+  return new Response(
+    JSON.stringify({ imdb_score: imdbRating, rt_critic: rtCritic, letterboxd_score: letterboxdScore }),
+    { status: 200, headers: { 'Content-Type': 'application/json', ...CORS } }
+  )
 })

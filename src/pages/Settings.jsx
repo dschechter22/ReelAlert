@@ -7,7 +7,8 @@ import TabBar from '../components/TabBar'
 import GenrePicker from '../components/GenrePicker'
 import PeopleSearch from '../components/PeopleSearch'
 import SMSPreview from '../components/SMSPreview'
-import { ChevronRight, LogOut, Bell, Palette, Users, Film, Phone, Send, RefreshCw } from 'lucide-react'
+import { ChevronRight, LogOut, Bell, Palette, Users, Film, Phone, Send, RefreshCw, BarChart3 } from 'lucide-react'
+import { DEFAULT_SCORING_WEIGHTS } from '../lib/reelScore'
 
 const THEME_OPTIONS = [
   { value: 'minimalist-light', label: 'Minimalist Light', desc: 'Clean & warm' },
@@ -54,6 +55,9 @@ export default function Settings() {
   const [testSmsSending, setTestSmsSending] = useState(false)
   const [testSmsResult, setTestSmsResult] = useState(null)
 
+  // Scoring weights (raw units, normalized to 100% internally)
+  const [scoringWeights, setScoringWeights] = useState(DEFAULT_SCORING_WEIGHTS)
+
   // Genre preferences
   const [genrePrefs, setGenrePrefs] = useState(DEFAULT_MOCK_PREFS.genrePreferences)
 
@@ -67,6 +71,7 @@ export default function Settings() {
     setCadence(user.user_metadata?.sms_cadence || 'weekly')
     setSmsTime(user.user_metadata?.sms_time || '10:00')
     setSmsDay(user.user_metadata?.sms_day ?? 1)
+    setScoringWeights(user.user_metadata?.scoring_weights ?? DEFAULT_SCORING_WEIGHTS)
 
     Promise.all([
       supabase.from('user_genre_preferences').select('*').eq('user_id', user.id),
@@ -83,7 +88,7 @@ export default function Settings() {
       // Save to Supabase if user exists
       if (user) {
         await supabase.auth.updateUser({
-          data: { phone_number: phone, zip_code: zip, sms_cadence: cadence, sms_time: smsTime, sms_day: smsDay }
+          data: { phone_number: phone, zip_code: zip, sms_cadence: cadence, sms_time: smsTime, sms_day: smsDay, scoring_weights: scoringWeights }
         })
         await supabase.from('user_genre_preferences').upsert(
           genrePrefs.map((gp) => ({ ...gp, user_id: user.id })),
@@ -250,6 +255,44 @@ export default function Settings() {
         {/* SMS Preview */}
         <SectionHeader icon={Phone} title="Digest Preview" />
         <SMSPreview cadence={cadence} prefs={previewPrefs} />
+
+        {/* Scoring Weights */}
+        <SectionHeader icon={BarChart3} title="Scoring Weights" />
+        <div className="bg-surface rounded-2xl p-4 space-y-4">
+          <p className="text-text-secondary text-xs font-body">
+            Adjust how much each rating source influences the ReelScore. Weights are normalized automatically.
+          </p>
+          {[
+            { key: 'imdb', label: 'IMDb' },
+            { key: 'rt',   label: 'RT Critic' },
+            { key: 'lb',   label: 'Letterboxd' },
+          ].map(({ key, label }) => {
+            const total = (scoringWeights.imdb ?? 0) + (scoringWeights.rt ?? 0) + (scoringWeights.lb ?? 0) || 1
+            const pct = Math.round((scoringWeights[key] ?? 0) / total * 100)
+            return (
+              <div key={key}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-text font-body text-sm">{label}</span>
+                  <span className="text-accent font-body text-sm font-medium tabular-nums">{pct}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={scoringWeights[key] ?? 0}
+                  onChange={(e) => setScoringWeights((w) => ({ ...w, [key]: Number(e.target.value) }))}
+                  className="w-full accent-accent"
+                />
+              </div>
+            )
+          })}
+          <button
+            onClick={() => setScoringWeights(DEFAULT_SCORING_WEIGHTS)}
+            className="text-xs font-body text-text-secondary hover:text-accent transition-colors"
+          >
+            Reset to default (33 / 33 / 34)
+          </button>
+        </div>
 
         {/* Genre Preferences */}
         <SectionHeader icon={Film} title="Genre Preferences" />

@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS public.users (
 
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can read and update their own record" ON public.users;
 CREATE POLICY "Users can read and update their own record"
   ON public.users FOR ALL
   USING (auth.uid() = id)
@@ -56,6 +57,7 @@ CREATE TABLE IF NOT EXISTS public.user_rating_thresholds (
 
 ALTER TABLE public.user_rating_thresholds ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users manage their own rating thresholds" ON public.user_rating_thresholds;
 CREATE POLICY "Users manage their own rating thresholds"
   ON public.user_rating_thresholds FOR ALL
   USING (auth.uid() = user_id)
@@ -76,6 +78,7 @@ CREATE TABLE IF NOT EXISTS public.user_genre_thresholds (
 
 ALTER TABLE public.user_genre_thresholds ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users manage their own genre thresholds" ON public.user_genre_thresholds;
 CREATE POLICY "Users manage their own genre thresholds"
   ON public.user_genre_thresholds FOR ALL
   USING (auth.uid() = user_id)
@@ -94,6 +97,7 @@ CREATE TABLE IF NOT EXISTS public.user_genre_preferences (
 
 ALTER TABLE public.user_genre_preferences ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users manage their own genre preferences" ON public.user_genre_preferences;
 CREATE POLICY "Users manage their own genre preferences"
   ON public.user_genre_preferences FOR ALL
   USING (auth.uid() = user_id)
@@ -113,6 +117,7 @@ CREATE TABLE IF NOT EXISTS public.user_people_preferences (
 
 ALTER TABLE public.user_people_preferences ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users manage their own people preferences" ON public.user_people_preferences;
 CREATE POLICY "Users manage their own people preferences"
   ON public.user_people_preferences FOR ALL
   USING (auth.uid() = user_id)
@@ -130,6 +135,7 @@ CREATE TABLE IF NOT EXISTS public.user_theater_preferences (
 
 ALTER TABLE public.user_theater_preferences ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users manage their own theater preferences" ON public.user_theater_preferences;
 CREATE POLICY "Users manage their own theater preferences"
   ON public.user_theater_preferences FOR ALL
   USING (auth.uid() = user_id)
@@ -160,12 +166,12 @@ CREATE TABLE IF NOT EXISTS public.movies (
 
 ALTER TABLE public.movies ENABLE ROW LEVEL SECURITY;
 
--- All authenticated users can read movies
+DROP POLICY IF EXISTS "Authenticated users can read movies" ON public.movies;
 CREATE POLICY "Authenticated users can read movies"
   ON public.movies FOR SELECT
   USING (auth.role() = 'authenticated');
 
--- Only service role can write movies (populated by edge functions)
+DROP POLICY IF EXISTS "Service role can manage movies" ON public.movies;
 CREATE POLICY "Service role can manage movies"
   ON public.movies FOR ALL
   USING (auth.role() = 'service_role');
@@ -188,10 +194,12 @@ CREATE TABLE IF NOT EXISTS public.user_movie_scores (
 
 ALTER TABLE public.user_movie_scores ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can read their own movie scores" ON public.user_movie_scores;
 CREATE POLICY "Users can read their own movie scores"
   ON public.user_movie_scores FOR SELECT
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Service role manages all movie scores" ON public.user_movie_scores;
 CREATE POLICY "Service role manages all movie scores"
   ON public.user_movie_scores FOR ALL
   USING (auth.role() = 'service_role');
@@ -209,6 +217,7 @@ CREATE TABLE IF NOT EXISTS public.user_watchlist (
 
 ALTER TABLE public.user_watchlist ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users manage their own watchlist" ON public.user_watchlist;
 CREATE POLICY "Users manage their own watchlist"
   ON public.user_watchlist FOR ALL
   USING (auth.uid() = user_id)
@@ -228,10 +237,12 @@ CREATE TABLE IF NOT EXISTS public.sms_log (
 
 ALTER TABLE public.sms_log ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can read their own SMS log" ON public.sms_log;
 CREATE POLICY "Users can read their own SMS log"
   ON public.sms_log FOR SELECT
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Service role manages SMS log" ON public.sms_log;
 CREATE POLICY "Service role manages SMS log"
   ON public.sms_log FOR ALL
   USING (auth.role() = 'service_role');

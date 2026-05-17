@@ -6,9 +6,8 @@ import { DEFAULT_MOCK_PREFS } from '../lib/mockData'
 import TabBar from '../components/TabBar'
 import GenrePicker from '../components/GenrePicker'
 import PeopleSearch from '../components/PeopleSearch'
-import RatingSlider from '../components/RatingSlider'
 import SMSPreview from '../components/SMSPreview'
-import { ChevronRight, LogOut, Bell, Palette, Users, BarChart3, Film, Phone } from 'lucide-react'
+import { ChevronRight, LogOut, Bell, Palette, Users, Film, Phone } from 'lucide-react'
 
 const THEME_OPTIONS = [
   { value: 'minimalist-light', label: 'Minimalist Light', desc: 'Clean & warm' },
@@ -27,12 +26,6 @@ const CADENCE_OPTIONS = [
   { value: 'weekly', label: 'Weekly' },
   { value: 'biweekly', label: 'Bi-weekly' },
 ]
-
-const QUALITY_PRESETS = {
-  low: { rt_critic: 50, tmdb: 5.5, letterboxd: 2.5, rt_audience: 50 },
-  medium: { rt_critic: 70, tmdb: 6.5, letterboxd: 3.0, rt_audience: 65 },
-  high: { rt_critic: 85, tmdb: 7.5, letterboxd: 3.8, rt_audience: 80 },
-}
 
 function SectionHeader({ icon: Icon, title }) {
   return (
@@ -56,14 +49,6 @@ export default function Settings() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
-  // Rating thresholds state
-  const [thresholds, setThresholds] = useState({
-    rt_critic: { value: 70, operator: 'and' },
-    rt_audience: { value: 65, operator: 'or' },
-    tmdb: { value: 6.5, operator: 'and' },
-    letterboxd: { value: 3.0, operator: 'or' },
-  })
-
   // Genre preferences
   const [genrePrefs, setGenrePrefs] = useState(DEFAULT_MOCK_PREFS.genrePreferences)
 
@@ -78,16 +63,6 @@ export default function Settings() {
     }
   }, [user])
 
-  function applyQualityPreset(preset) {
-    const vals = QUALITY_PRESETS[preset]
-    setThresholds((prev) => ({
-      rt_critic: { value: vals.rt_critic, operator: prev.rt_critic.operator },
-      rt_audience: { value: vals.rt_audience, operator: prev.rt_audience.operator },
-      tmdb: { value: vals.tmdb, operator: prev.tmdb.operator },
-      letterboxd: { value: vals.letterboxd, operator: prev.letterboxd.operator },
-    }))
-  }
-
   async function handleSave() {
     setSaving(true)
     try {
@@ -96,10 +71,6 @@ export default function Settings() {
         await supabase.auth.updateUser({
           data: { phone_number: phone, zip_code: zip, sms_cadence: cadence, sms_time: smsTime }
         })
-        const threshArr = Object.entries(thresholds).map(([source, t]) => ({
-          user_id: user.id, source, min_score: t.value, and_or_operator: t.operator,
-        }))
-        await supabase.from('user_rating_thresholds').upsert(threshArr, { onConflict: 'user_id,source' })
         await supabase.from('user_genre_preferences').upsert(
           genrePrefs.map((gp) => ({ ...gp, user_id: user.id })),
           { onConflict: 'user_id,genre_id' }
@@ -120,10 +91,6 @@ export default function Settings() {
 
   // Build prefs for live SMS preview
   const previewPrefs = {
-    globalThresholds: Object.entries(thresholds).map(([source, t]) => ({
-      source, min_score: t.value, and_or_operator: t.operator,
-    })),
-    genreThresholds: [],
     genrePreferences: genrePrefs,
     peoplePreferences: peoplePref,
   }
@@ -215,33 +182,6 @@ export default function Settings() {
             Tap each genre to cycle: <span className="text-emerald-400">Must See</span> → <span className="text-blue-400">Fine</span> → <span className="text-red-400">Never</span> → unset
           </p>
           <GenrePicker preferences={genrePrefs} onChange={setGenrePrefs} />
-        </div>
-
-        {/* Rating Thresholds */}
-        <SectionHeader icon={BarChart3} title="Rating Thresholds" />
-        <div className="space-y-3">
-          {/* Presets */}
-          <div className="flex gap-2">
-            {Object.keys(QUALITY_PRESETS).map((preset) => (
-              <button
-                key={preset}
-                onClick={() => applyQualityPreset(preset)}
-                className="flex-1 py-2 rounded-xl text-sm font-body font-medium border bg-surface text-text-secondary border-accent-secondary/20 hover:border-accent/30 hover:text-text capitalize transition-colors"
-              >
-                {preset}
-              </button>
-            ))}
-          </div>
-          {Object.entries(thresholds).map(([source, t]) => (
-            <RatingSlider
-              key={source}
-              source={source}
-              value={t.value}
-              operator={t.operator}
-              onChange={(val) => setThresholds((prev) => ({ ...prev, [source]: { ...prev[source], value: val } }))}
-              onOperatorChange={(op) => setThresholds((prev) => ({ ...prev, [source]: { ...prev[source], operator: op } }))}
-            />
-          ))}
         </div>
 
         {/* People Preferences */}

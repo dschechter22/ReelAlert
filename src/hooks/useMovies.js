@@ -112,16 +112,12 @@ export function useMovies(userId) {
 }
 
 async function fetchUserPrefs(userId) {
-  const [thresholdsRes, genreThreshRes, genrePrefsRes, peoplePrefsRes] = await Promise.all([
-    supabase.from('user_rating_thresholds').select('*').eq('user_id', userId),
-    supabase.from('user_genre_thresholds').select('*').eq('user_id', userId),
+  const [genrePrefsRes, peoplePrefsRes] = await Promise.all([
     supabase.from('user_genre_preferences').select('*').eq('user_id', userId),
     supabase.from('user_people_preferences').select('*').eq('user_id', userId),
   ])
 
   return {
-    globalThresholds: thresholdsRes.data?.length ? thresholdsRes.data : DEFAULT_MOCK_PREFS.globalThresholds,
-    genreThresholds: genreThreshRes.data || [],
     genrePreferences: genrePrefsRes.data?.length ? genrePrefsRes.data : DEFAULT_MOCK_PREFS.genrePreferences,
     peoplePreferences: peoplePrefsRes.data || [],
   }

@@ -202,11 +202,6 @@ export const MOCK_MOVIES = [
  * Default user preferences used for mock ReelScore computation.
  */
 export const DEFAULT_MOCK_PREFS = {
-  globalThresholds: [
-    { source: 'rt_critic', min_score: 70, and_or_operator: 'and' },
-    { source: 'tmdb', min_score: 6.5, and_or_operator: 'and' },
-  ],
-  genreThresholds: [],
   genrePreferences: [
     { genre_id: 18, priority: 'must_see' },   // Drama
     { genre_id: 9648, priority: 'must_see' }, // Mystery

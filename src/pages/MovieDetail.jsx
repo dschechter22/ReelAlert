@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useMovies, useWatchlist } from '../hooks/useMovies'
-import { ArrowLeft, Bookmark, BookmarkCheck, ExternalLink, Check, X } from 'lucide-react'
+import { ArrowLeft, Bookmark, BookmarkCheck, ExternalLink } from 'lucide-react'
 import BucketBadge from '../components/BucketBadge'
 import TabBar from '../components/TabBar'
 
@@ -10,31 +10,6 @@ const SOURCE_LABELS = {
   rt_critic: 'RT Critic',
   rt_audience: 'RT Audience',
   letterboxd: 'Letterboxd',
-}
-
-function ScoreRow({ source, data }) {
-  if (!data) return null
-  return (
-    <div className="flex items-center justify-between py-3 border-b border-accent-secondary/10 last:border-0">
-      <div className="flex items-center gap-2.5">
-        <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${data.passed ? 'bg-emerald-500/20' : 'bg-red-500/20'}`}>
-          {data.passed
-            ? <Check size={11} className="text-emerald-400" />
-            : <X size={11} className="text-red-400" />
-          }
-        </div>
-        <span className="font-body text-sm text-text">{SOURCE_LABELS[source] || source}</span>
-      </div>
-      <div className="text-right">
-        <span className={`font-body text-sm font-semibold ${data.passed ? 'text-text' : 'text-text-secondary'}`}>
-          {data.actual ?? 'N/A'}
-        </span>
-        {data.required != null && (
-          <span className="text-text-secondary text-xs font-body ml-1.5">min {data.required}</span>
-        )}
-      </div>
-    </div>
-  )
 }
 
 export default function MovieDetail() {
@@ -127,43 +102,58 @@ export default function MovieDetail() {
           </div>
         )}
 
-        {/* Rating breakdown */}
+        {/* Score breakdown */}
         <div className="mb-6">
-          <h2 className="font-heading font-semibold text-text text-lg mb-3">Rating Breakdown</h2>
+          <h2 className="font-heading font-semibold text-text text-lg mb-3">Score Breakdown</h2>
           <div className="bg-surface rounded-2xl px-4 py-1">
-            {Object.entries(breakdown?.globalThresholds || {}).map(([source, data]) => (
-              <ScoreRow key={source} source={source} data={data} />
-            ))}
-            {Object.keys(breakdown?.globalThresholds || {}).length === 0 && (
-              <p className="text-text-secondary text-sm font-body py-3 text-center">
-                No thresholds set. Configure them in Settings.
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* All scores */}
-        <div className="mb-6">
-          <h2 className="font-heading font-semibold text-text text-lg mb-3">All Scores</h2>
-          <div className="bg-surface rounded-2xl px-4 py-1">
-            {Object.entries(breakdown?.sources || {}).map(([source, data]) => (
-              <div key={source} className="flex justify-between py-3 border-b border-accent-secondary/10 last:border-0">
-                <span className="text-text font-body text-sm">{SOURCE_LABELS[source] || source}</span>
-                <span className="text-text font-body text-sm font-semibold">{data.displayValue}</span>
+            <div className="flex justify-between py-3 border-b border-accent-secondary/10">
+              <span className="text-text font-body text-sm">TMDB base</span>
+              <span className="text-text font-body text-sm font-semibold">{breakdown?.baseScore ?? score}/100</span>
+            </div>
+            {breakdown?.hasMustSeeGenre && (
+              <div className="flex justify-between py-3 border-b border-accent-secondary/10">
+                <span className="text-emerald-400 font-body text-sm">Must-See Genre boost</span>
+                <span className="text-emerald-400 font-body text-sm font-semibold">+10</span>
               </div>
-            ))}
+            )}
+            {breakdown?.hasFavoritePerson && (
+              <div className="flex justify-between py-3 border-b border-accent-secondary/10">
+                <span className="text-pink-400 font-body text-sm">Favorite person boost</span>
+                <span className="text-pink-400 font-body text-sm font-semibold">+15</span>
+              </div>
+            )}
+            {breakdown?.hasNeverGenre && (
+              <div className="flex justify-between py-3 border-b border-accent-secondary/10">
+                <span className="text-red-400 font-body text-sm">Excluded genre penalty</span>
+                <span className="text-red-400 font-body text-sm font-semibold">−25</span>
+              </div>
+            )}
+            {breakdown?.hasExcludedPerson && (
+              <div className="flex justify-between py-3 border-b border-accent-secondary/10">
+                <span className="text-red-400 font-body text-sm">Excluded person penalty</span>
+                <span className="text-red-400 font-body text-sm font-semibold">−30</span>
+              </div>
+            )}
+            <div className="flex justify-between py-3">
+              <span className="text-text font-body text-sm font-semibold">ReelScore</span>
+              <span className="text-accent font-heading font-bold text-base">{score}/100</span>
+            </div>
           </div>
         </div>
 
-        {/* Flags */}
-        {(breakdown?.hasMustSeeGenre || breakdown?.hasFavoritePerson || breakdown?.hasNeverGenre || breakdown?.hasExcludedPerson) && (
+        {/* All scores — only shown when external data is available */}
+        {Object.values(breakdown?.sources || {}).some((s) => s.value != null) && (
           <div className="mb-6">
-            <h2 className="font-heading font-semibold text-text text-lg mb-3">Personalization Flags</h2>
-            <div className="bg-surface rounded-2xl p-4 space-y-2">
-              {breakdown.hasMustSeeGenre && <p className="text-emerald-400 text-sm font-body">✓ Contains a Must-See genre for you</p>}
-              {breakdown.hasFavoritePerson && <p className="text-pink-400 text-sm font-body">✓ Features someone on your favorites list</p>}
-              {breakdown.hasNeverGenre && <p className="text-red-400 text-sm font-body">✗ Contains a genre you've excluded</p>}
-              {breakdown.hasExcludedPerson && <p className="text-red-400 text-sm font-body">✗ Features someone on your exclusion list</p>}
+            <h2 className="font-heading font-semibold text-text text-lg mb-3">All Scores</h2>
+            <div className="bg-surface rounded-2xl px-4 py-1">
+              {Object.entries(breakdown.sources)
+                .filter(([, data]) => data.value != null)
+                .map(([source, data]) => (
+                  <div key={source} className="flex justify-between py-3 border-b border-accent-secondary/10 last:border-0">
+                    <span className="text-text font-body text-sm">{SOURCE_LABELS[source] || source}</span>
+                    <span className="text-text font-body text-sm font-semibold">{data.displayValue}</span>
+                  </div>
+                ))}
             </div>
           </div>
         )}

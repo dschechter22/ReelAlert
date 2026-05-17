@@ -34,11 +34,13 @@ supabase link --project-ref "$SUPABASE_PROJECT_REF"
 
 echo "Deploying edge functions..."
 supabase functions deploy amc-proxy --no-verify-jwt
+supabase functions deploy omdb-proxy --no-verify-jwt
 supabase functions deploy send-digest
 
 echo "Setting secrets..."
 supabase secrets set \
   AMC_API_KEY="${VITE_AMC_API_KEY}" \
+  OMDB_API_KEY="${OMDB_API_KEY}" \
   TWILIO_ACCOUNT_SID="${TWILIO_ACCOUNT_SID}" \
   TWILIO_AUTH_TOKEN="${TWILIO_AUTH_TOKEN}" \
   TWILIO_FROM_NUMBER="${TWILIO_FROM_NUMBER}"

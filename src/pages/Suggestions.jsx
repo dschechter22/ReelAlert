@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Sparkles, RefreshCw, Shuffle, EyeOff } from 'lucide-react'
+import { Sparkles, RefreshCw, Shuffle, EyeOff, Search, X } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useRatings } from '../contexts/RatingsContext'
 import { supabase } from '../lib/supabase'
-import { discoverMovies, getMovieDetails } from '../lib/tmdb'
+import { discoverMovies, getMovieDetails, getPersonDetails, searchPeople } from '../lib/tmdb'
 import { computeReelScore, DEFAULT_SCORING_WEIGHTS } from '../lib/reelScore'
 import { fetchOMDbRatings } from '../lib/omdb'
 import { DEFAULT_MOCK_PREFS } from '../lib/mockData'
@@ -29,9 +29,29 @@ function getTopGenreIds(tasteProfile, limit = 6) {
 }
 
 function pickRandomPages(count = 3) {
-  const pool = Array.from({ length: 10 }, (_, i) => i + 1)
-  const shuffled = pool.sort(() => Math.random() - 0.5)
-  return shuffled.slice(0, count)
+  return Array.from({ length: 10 }, (_, i) => i + 1)
+    .sort(() => Math.random() - 0.5)
+    .slice(0, count)
+}
+
+// Collect movie IDs from a person's filmography.
+// Directors: only movies where job === 'Director' (excludes EP, Producer, etc.)
+// Others: acting credits.
+async function getFilmographyIds(personId) {
+  const details = await getPersonDetails(personId)
+  const directedIds = (details.movie_credits?.crew || [])
+    .filter((m) => m.job === 'Director' && (m.vote_count ?? 0) > 5)
+    .sort((a, b) => (b.vote_average ?? 0) - (a.vote_average ?? 0))
+    .map((m) => m.id)
+
+  const actingIds = (details.movie_credits?.cast || [])
+    .filter((m) => (m.vote_count ?? 0) > 5)
+    .sort((a, b) => (b.vote_average ?? 0) - (a.vote_average ?? 0))
+    .map((m) => m.id)
+
+  // If they have directed credits, use those first; otherwise fall back to acting
+  const ids = directedIds.length > 0 ? directedIds : actingIds
+  return [...new Set(ids)].slice(0, 30)
 }
 
 export default function Suggestions() {
@@ -39,16 +59,23 @@ export default function Suggestions() {
   const { ratings, tasteProfile } = useRatings()
   const navigate = useNavigate()
 
-  const [rawMovies, setRawMovies] = useState([])   // unscored, from TMDB + OMDb
+  const [rawMovies, setRawMovies] = useState([])
   const [loading, setLoading] = useState(true)
   const [bucketFilter, setBucketFilter] = useState('all')
-  const [selectedPeople, setSelectedPeople] = useState([])  // array of tmdb_person_id
+  // selectedPeople: array of { tmdb_person_id, person_name }
+  const [selectedPeople, setSelectedPeople] = useState([])
   const [hideWatched, setHideWatched] = useState(false)
   const [pages, setPages] = useState(() => pickRandomPages())
   const [favoritePeople, setFavoritePeople] = useState([])
   const [userPrefs, setUserPrefs] = useState(null)
 
-  // Load prefs + favourite people once
+  // People search
+  const [peopleQuery, setPeopleQuery] = useState('')
+  const [peopleResults, setPeopleResults] = useState([])
+  const [searchingPeople, setSearchingPeople] = useState(false)
+  const searchDebounceRef = useRef(null)
+
+  // Load prefs + favourited people once
   useEffect(() => {
     async function init() {
       let prefs = { ...DEFAULT_MOCK_PREFS, tasteMaxAdjustment: 20 }
@@ -68,9 +95,7 @@ export default function Suggestions() {
               : DEFAULT_SCORING_WEIGHTS,
             tasteMaxAdjustment: Number(authUser?.user_metadata?.taste_max_adjustment ?? 20),
           }
-          setFavoritePeople(
-            (peopleRes.data || []).filter((p) => p.preference_type === 'favorite')
-          )
+          setFavoritePeople((peopleRes.data || []).filter((p) => p.preference_type === 'favorite'))
         } catch { /* use defaults */ }
       }
       setUserPrefs(prefs)
@@ -78,52 +103,61 @@ export default function Suggestions() {
     init()
   }, [user])
 
-  // Fetch raw movie data (API calls). Re-runs on pages or people filter change.
-  const fetchMovies = useCallback(async (currentPages, prefs, tasteProf, personIds) => {
+  // Debounced people search
+  useEffect(() => {
+    if (!peopleQuery.trim()) { setPeopleResults([]); return }
+    clearTimeout(searchDebounceRef.current)
+    searchDebounceRef.current = setTimeout(async () => {
+      setSearchingPeople(true)
+      try {
+        const { results } = await searchPeople(peopleQuery)
+        setPeopleResults((results || []).slice(0, 6))
+      } catch { setPeopleResults([]) }
+      finally { setSearchingPeople(false) }
+    }, 300)
+    return () => clearTimeout(searchDebounceRef.current)
+  }, [peopleQuery])
+
+  // Core fetch — uses filmography when people are selected, discover otherwise
+  const fetchMovies = useCallback(async (currentPages, prefs, tasteProf, people) => {
     if (!prefs) return
     setLoading(true)
     try {
-      // Build genre pool: must-see genres + top taste genres
-      const mustSeeIds = (prefs.genrePreferences || [])
-        .filter((g) => g.priority === 'must_see')
-        .map((g) => g.genre_id)
-      const tasteGenreIds = getTopGenreIds(tasteProf)
-      const genreIds = [...new Set([...mustSeeIds, ...tasteGenreIds])]
+      let movieIds = []
 
-      let allResults = []
-
-      if (personIds.length > 0) {
-        // One discover call per person, then union results
-        const perPersonFetches = await Promise.allSettled(
-          personIds.flatMap((personId) =>
-            currentPages.map((page) =>
-              discoverMovies({ genreIds, page, minVotes: 30, withPeople: [personId] })
-            )
-          )
+      if (people.length > 0) {
+        // Filmography-based: bypasses genre filter entirely so directors show correctly
+        const filmographyResults = await Promise.allSettled(
+          people.map((p) => getFilmographyIds(p.tmdb_person_id))
         )
-        allResults = perPersonFetches
-          .filter((r) => r.status === 'fulfilled')
-          .flatMap((r) => r.value?.results || [])
+        // Union across all selected people
+        const idSet = new Set(
+          filmographyResults.flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
+        )
+        movieIds = [...idSet].slice(0, 30)
       } else {
+        // Personalized discover by taste genres
+        const mustSeeIds = (prefs.genrePreferences || [])
+          .filter((g) => g.priority === 'must_see')
+          .map((g) => g.genre_id)
+        const tasteGenreIds = getTopGenreIds(tasteProf)
+        const genreIds = [...new Set([...mustSeeIds, ...tasteGenreIds])]
+
         const fetches = await Promise.allSettled(
           currentPages.map((page) => discoverMovies({ genreIds, page, minVotes: 100 }))
         )
-        allResults = fetches
+        const results = fetches
           .filter((r) => r.status === 'fulfilled')
           .flatMap((r) => r.value?.results || [])
+        const seen = new Set()
+        movieIds = results
+          .filter((m) => { if (seen.has(m.id)) return false; seen.add(m.id); return true })
+          .slice(0, 20)
+          .map((m) => m.id)
       }
 
-      // Deduplicate
-      const seen = new Set()
-      allResults = allResults.filter((m) => {
-        if (seen.has(m.id)) return false
-        seen.add(m.id)
-        return true
-      })
-
-      // Enrich top 20 with full details + OMDb scores
-      const slice = allResults.slice(0, 20)
-      const details = await Promise.allSettled(slice.map((m) => getMovieDetails(m.id)))
+      // Fetch full details + OMDb
+      const details = await Promise.allSettled(movieIds.map((id) => getMovieDetails(id)))
       const omdbResults = await Promise.allSettled(
         details.map((d) =>
           d.status === 'fulfilled' ? fetchOMDbRatings(d.value.imdb_id) : Promise.resolve(null)
@@ -166,12 +200,12 @@ export default function Suggestions() {
     }
   }, [])
 
-  // Re-fetch when pages or people filter changes (or on first load)
+  // Re-fetch when pages, people, or prefs change (not on tasteProfile — rescoring is in-memory)
   useEffect(() => {
     if (userPrefs) fetchMovies(pages, userPrefs, tasteProfile, selectedPeople)
-  }, [pages, selectedPeople, userPrefs]) // intentionally omit tasteProfile — rescoring is in-memory
+  }, [pages, selectedPeople, userPrefs])
 
-  // Score + sort in memory whenever raw data or taste profile changes (no API calls)
+  // Rescore in memory when taste profile changes — no API calls
   const movies = useMemo(() => {
     if (!userPrefs) return []
     const enrichedPrefs = { ...userPrefs, tasteProfile }
@@ -180,7 +214,6 @@ export default function Suggestions() {
       .sort((a, b) => b.score - a.score)
   }, [rawMovies, userPrefs, tasteProfile])
 
-  // Apply client-side filters
   const displayMovies = useMemo(() => {
     let list = movies
     if (hideWatched) list = list.filter((m) => !ratings[String(m.tmdb_id)])
@@ -188,24 +221,38 @@ export default function Suggestions() {
     return list
   }, [movies, hideWatched, bucketFilter, ratings])
 
-  function handleShuffle() {
-    setPages(pickRandomPages())
+  function addPerson(person) {
+    const id = person.id ?? person.tmdb_person_id
+    if (selectedPeople.some((p) => p.tmdb_person_id === id)) return
+    setSelectedPeople((prev) => [...prev, { tmdb_person_id: id, person_name: person.name ?? person.person_name }])
+    setPeopleQuery('')
+    setPeopleResults([])
   }
 
-  function togglePerson(id) {
-    setSelectedPeople((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    )
+  function removePerson(id) {
+    setSelectedPeople((prev) => prev.filter((p) => p.tmdb_person_id !== id))
   }
+
+  function toggleFavoritePerson(fav) {
+    const active = selectedPeople.some((p) => p.tmdb_person_id === fav.tmdb_person_id)
+    if (active) removePerson(fav.tmdb_person_id)
+    else addPerson({ id: fav.tmdb_person_id, name: fav.person_name })
+  }
+
+  const selectedIds = new Set(selectedPeople.map((p) => p.tmdb_person_id))
+  // People from search results not already in favorites list
+  const searchResultsToShow = peopleResults.filter(
+    (r) => !favoritePeople.some((f) => f.tmdb_person_id === r.id)
+  )
 
   return (
     <div className="min-h-screen bg-bg pb-28">
-      {/* Header */}
       <header
         className="sticky top-0 z-20 border-b border-accent-secondary/15 px-4 pt-safe"
         style={{ background: 'rgb(var(--color-bg) / 0.9)', backdropFilter: 'blur(12px)' }}
       >
         <div className="max-w-2xl mx-auto">
+          {/* Title row */}
           <div className="flex items-center justify-between py-4">
             <div className="flex items-center gap-2">
               <Sparkles size={20} className="text-accent" />
@@ -215,7 +262,7 @@ export default function Suggestions() {
               </div>
             </div>
             <button
-              onClick={handleShuffle}
+              onClick={() => setPages(pickRandomPages())}
               disabled={loading}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-surface border border-accent-secondary/20 text-text-secondary text-sm font-body hover:text-accent hover:border-accent/30 transition-colors disabled:opacity-40"
             >
@@ -224,34 +271,88 @@ export default function Suggestions() {
             </button>
           </div>
 
-          {/* Favourite people filter */}
-          {favoritePeople.length > 0 && (
-            <div className="mb-2">
-              <p className="text-text-secondary/60 text-xs font-body uppercase tracking-wide mb-1.5">
-                Filter by person
-              </p>
+          {/* People filter */}
+          <div className="mb-3">
+            {/* Search input */}
+            <div className="relative mb-2">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
+              <input
+                type="text"
+                value={peopleQuery}
+                onChange={(e) => setPeopleQuery(e.target.value)}
+                placeholder="Filter by actor or director…"
+                className="w-full bg-surface border border-accent-secondary/20 rounded-xl pl-8 pr-4 py-2 text-sm text-text font-body placeholder-text-secondary focus:outline-none focus:border-accent/40"
+              />
+              {searchingPeople && (
+                <RefreshCw size={12} className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary animate-spin" />
+              )}
+            </div>
+
+            {/* Search results */}
+            {searchResultsToShow.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto scrollbar-none pb-1 mb-2">
+                {searchResultsToShow.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => addPerson(p)}
+                    className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-body font-medium border transition-colors ${
+                      selectedIds.has(p.id)
+                        ? 'bg-accent text-white border-accent'
+                        : 'bg-surface text-text-secondary border-accent-secondary/20 hover:border-accent/40'
+                    }`}
+                  >
+                    {p.name}
+                    {p.known_for_department && (
+                      <span className="ml-1 opacity-60">· {p.known_for_department}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Favourite people chips */}
+            {favoritePeople.length > 0 && (
               <div className="flex gap-2 overflow-x-auto scrollbar-none pb-1">
                 {favoritePeople.map((p) => {
-                  const active = selectedPeople.includes(p.tmdb_person_id)
+                  const active = selectedIds.has(p.tmdb_person_id)
                   return (
                     <button
                       key={p.tmdb_person_id}
-                      onClick={() => togglePerson(p.tmdb_person_id)}
+                      onClick={() => toggleFavoritePerson(p)}
                       className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-body font-medium border transition-colors ${
                         active
                           ? 'bg-accent text-white border-accent'
                           : 'bg-surface text-text-secondary border-accent-secondary/20 hover:border-accent/40'
                       }`}
                     >
-                      {p.person_name || p.tmdb_person_id}
+                      ★ {p.person_name}
                     </button>
                   )
                 })}
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Bucket filter + hide-seen toggle */}
+            {/* Active people added via search (non-favorites) */}
+            {selectedPeople.filter((p) => !favoritePeople.some((f) => f.tmdb_person_id === p.tmdb_person_id)).length > 0 && (
+              <div className="flex gap-2 overflow-x-auto scrollbar-none pb-1 mt-2">
+                {selectedPeople
+                  .filter((p) => !favoritePeople.some((f) => f.tmdb_person_id === p.tmdb_person_id))
+                  .map((p) => (
+                    <span
+                      key={p.tmdb_person_id}
+                      className="flex-shrink-0 inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-body font-medium bg-accent text-white border border-accent"
+                    >
+                      {p.person_name}
+                      <button onClick={() => removePerson(p.tmdb_person_id)} className="hover:opacity-70 ml-0.5">
+                        <X size={11} />
+                      </button>
+                    </span>
+                  ))}
+              </div>
+            )}
+          </div>
+
+          {/* Bucket filters + hide-seen */}
           <div className="flex items-center gap-2 pb-3">
             <div className="flex gap-2 overflow-x-auto scrollbar-none flex-1">
               {BUCKET_FILTERS.map((f) => (
@@ -283,12 +384,13 @@ export default function Suggestions() {
         </div>
       </header>
 
-      {/* Movie list */}
       <main className="max-w-2xl mx-auto px-4 pt-3">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
             <RefreshCw size={24} className="text-accent animate-spin" />
-            <p className="text-text-secondary font-body text-sm">Finding films for you…</p>
+            <p className="text-text-secondary font-body text-sm">
+              {selectedPeople.length > 0 ? `Loading filmography…` : 'Finding films for you…'}
+            </p>
           </div>
         ) : displayMovies.length === 0 ? (
           <div className="text-center py-20 space-y-3">
@@ -298,15 +400,17 @@ export default function Suggestions() {
                 : bucketFilter !== 'all' && movies.length > 0
                 ? 'No films in this category — try a different filter.'
                 : selectedPeople.length > 0
-                ? 'No results for the selected people — try shuffling.'
+                ? 'No results found for the selected people.'
                 : 'Nothing found.'}
             </p>
-            <button
-              onClick={handleShuffle}
-              className="text-accent text-sm font-body hover:opacity-80 transition-opacity"
-            >
-              Shuffle for new picks →
-            </button>
+            {selectedPeople.length === 0 && (
+              <button
+                onClick={() => setPages(pickRandomPages())}
+                className="text-accent text-sm font-body hover:opacity-80 transition-opacity"
+              >
+                Shuffle for new picks →
+              </button>
+            )}
           </div>
         ) : (
           <>
@@ -354,14 +458,10 @@ function SuggestionCard({ movie, onOpen }) {
 
       <div className="flex-1 p-3 flex flex-col justify-between min-w-0">
         <div>
-          <div className="flex items-start justify-between gap-2 mb-1">
-            <div className="min-w-0">
-              <h3 className="font-heading font-semibold text-text text-base leading-tight line-clamp-1">{title}</h3>
-              <div className="flex items-center gap-2 mt-0.5">
-                {year && <span className="text-text-secondary/50 text-xs font-body">{year}</span>}
-                {director && <span className="text-text-secondary/50 text-xs font-body">· {director.name}</span>}
-              </div>
-            </div>
+          <h3 className="font-heading font-semibold text-text text-base leading-tight line-clamp-1 mb-0.5">{title}</h3>
+          <div className="flex items-center gap-2 mb-1.5">
+            {year && <span className="text-text-secondary/50 text-xs font-body">{year}</span>}
+            {director && <span className="text-text-secondary/50 text-xs font-body">· {director.name}</span>}
           </div>
 
           <BucketBadge bucket={bucket} className="mb-2" />
@@ -388,10 +488,7 @@ function SuggestionCard({ movie, onOpen }) {
 
           <div className="flex flex-wrap gap-1">
             {(genres || []).slice(0, 3).map((g) => (
-              <span
-                key={g.id}
-                className="px-2 py-0.5 bg-bg rounded-full text-xs text-text-secondary border border-accent-secondary/20 font-body"
-              >
+              <span key={g.id} className="px-2 py-0.5 bg-bg rounded-full text-xs text-text-secondary border border-accent-secondary/20 font-body">
                 {g.name}
               </span>
             ))}
@@ -404,17 +501,14 @@ function SuggestionCard({ movie, onOpen }) {
               <span className="text-accent font-heading font-bold text-lg leading-none">{score}</span>
               <span className="text-text-secondary text-xs font-body">/100</span>
             </div>
-            {breakdown?.tasteBonus !== 0 && breakdown?.tasteBonus != null && (
+            {!!breakdown?.tasteBonus && (
               <span className={`text-xs font-body font-medium ${breakdown.tasteBonus > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                 {breakdown.tasteBonus > 0 ? `+${breakdown.tasteBonus}` : breakdown.tasteBonus} taste
               </span>
             )}
             <StreamingBadges tmdbId={movie.tmdb_id} compact />
           </div>
-          <button
-            onClick={onOpen}
-            className="text-accent text-sm font-medium font-body hover:opacity-80 transition-opacity"
-          >
+          <button onClick={onOpen} className="text-accent text-sm font-medium font-body hover:opacity-80 transition-opacity">
             Details →
           </button>
         </div>

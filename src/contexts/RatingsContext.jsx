@@ -52,6 +52,10 @@ export function RatingsProvider({ children }) {
     const genreIds = (movie.genres || []).map((g) => (typeof g === 'object' ? g.id : g))
     const directorId = movie.director?.id ?? null
 
+    const defaultWeightMap = { liked: 1, disliked: -1, seen: 0, not_interested: -0.5 }
+    // Use explicit taste_weight from movie object (e.g. Letterboxd import) or derive from rating type
+    const tasteWeight = movie.taste_weight != null ? movie.taste_weight : defaultWeightMap[ratingValue] ?? 0
+
     const row = {
       user_id: user.id,
       tmdb_id: tmdbId,
@@ -61,6 +65,7 @@ export function RatingsProvider({ children }) {
       keywords,
       director_id: directorId,
       rating: ratingValue,
+      taste_weight: tasteWeight,
       rated_at: new Date().toISOString(),
     }
 

@@ -6,12 +6,20 @@
  * All affinities are normalized to [-1, 1].
  */
 
+// Derive weight from rating type when no explicit taste_weight is stored.
+function defaultWeight(rating) {
+  if (rating === 'liked') return 1
+  if (rating === 'disliked') return -1
+  if (rating === 'not_interested') return -0.5
+  return 0 // 'seen'
+}
+
 export function buildTasteProfile(ratings = []) {
   const genreRaw = {}
   const keywordRaw = {}
 
   for (const r of ratings) {
-    const weight = r.rating === 'liked' ? 1 : r.rating === 'disliked' ? -1 : 0
+    const weight = r.taste_weight != null ? r.taste_weight : defaultWeight(r.rating)
     if (weight === 0) continue
 
     for (const id of (r.genre_ids || [])) {

@@ -210,10 +210,25 @@ export default function Settings() {
           const keywords = (detail.keywords?.keywords || []).map((k) => k.name)
           const director = detail.credits?.crew?.find((c) => c.job === 'Director')
 
-          const ratingValue = isNaN(lbRating) ? 'seen'
-            : lbRating >= 3.5 ? 'liked'
-            : lbRating <= 2   ? 'disliked'
-            : 'seen'
+          // Map Letterboxd stars to rating bucket + explicit taste weight
+          let ratingValue, tasteWeight
+          if (isNaN(lbRating)) {
+            ratingValue = 'seen'; tasteWeight = 0
+          } else if (lbRating >= 4.5) {
+            ratingValue = 'liked'; tasteWeight = 3
+          } else if (lbRating >= 4.0) {
+            ratingValue = 'liked'; tasteWeight = 2
+          } else if (lbRating >= 3.5) {
+            ratingValue = 'liked'; tasteWeight = 1
+          } else if (lbRating >= 3.0) {
+            ratingValue = 'seen'; tasteWeight = 0
+          } else if (lbRating >= 2.5) {
+            ratingValue = 'disliked'; tasteWeight = -1
+          } else if (lbRating >= 2.0) {
+            ratingValue = 'disliked'; tasteWeight = -2
+          } else {
+            ratingValue = 'disliked'; tasteWeight = -3
+          }
 
           await rate({
             tmdb_id: match.id,
@@ -222,6 +237,7 @@ export default function Settings() {
             genres: detail.genres || [],
             keywords,
             director: director ? { id: director.id, name: director.name } : null,
+            taste_weight: tasteWeight,
           }, ratingValue)
           imported++
         } catch {

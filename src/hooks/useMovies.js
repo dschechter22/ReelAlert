@@ -135,7 +135,10 @@ async function fetchUserPrefs(userId) {
     supabase.auth.getUser(),
   ])
 
-  const sw = user?.user_metadata?.scoring_weights ?? { imdb: 33, rt: 33, lb: 34 }
+  const raw = user?.user_metadata?.scoring_weights
+  const sw = raw
+    ? { imdb: Number(raw.imdb) || 33, rt: Number(raw.rt) || 33, lb: Number(raw.lb) || 34 }
+    : { imdb: 33, rt: 33, lb: 34 }
 
   return {
     genrePreferences: genrePrefsRes.data?.length ? genrePrefsRes.data : DEFAULT_MOCK_PREFS.genrePreferences,

@@ -70,11 +70,12 @@ export function computeReelScore(movie, userPrefs = {}) {
 
   const baseScore = weightedBase(movie, scoringWeights)
 
-  let score = baseScore
+  let score = Number.isFinite(baseScore) ? baseScore : 50
   if (hasMustSeeGenre)   score = Math.min(100, score + 10)
   if (hasFavoritePerson) score = Math.min(100, score + 15)
   if (hasNeverGenre)     score = Math.max(0,   score - 25)
   if (hasExcludedPerson) score = Math.max(0,   score - 30)
+  score = Number.isFinite(score) ? score : 50
 
   let bucket
   if (hasNeverGenre || hasExcludedPerson) {

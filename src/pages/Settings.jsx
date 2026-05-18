@@ -66,6 +66,7 @@ export default function Settings() {
   const [showCalibration, setShowCalibration] = useState(false)
   const [lbImporting, setLbImporting] = useState(false)
   const [lbResult, setLbResult] = useState(null)
+  const [lbProgress, setLbProgress] = useState(null) // { current, total }
   const lbInputRef = useRef(null)
 
   // Scoring weights (raw units, normalized to 100% internally)
@@ -182,37 +183,53 @@ export default function Settings() {
 
       let imported = 0
       let failed = 0
+      setLbProgress({ current: 0, total: rows.length })
 
-      for (let i = 0; i < rows.length; i += 5) {
-        const batch = rows.slice(i, i + 5)
-        await Promise.all(batch.map(async ({ name, year, rating: lbRating }) => {
-          try {
-            const { results } = await searchMovies(`${name} ${year}`)
-            const match = results?.[0]
-            if (!match) { failed++; return }
+      for (let i = 0; i < rows.length; i++) {
+        const { name, year, rating: lbRating } = rows[i]
+        setLbProgress({ current: i + 1, total: rows.length })
 
-            const detail = await getMovieDetails(match.id)
-            const keywords = (detail.keywords?.keywords || []).map((k) => k.name)
-            const genreIds = (detail.genres || []).map((g) => g.id)
-            const director = detail.credits?.crew?.find((c) => c.job === 'Director')
+        try {
+          // Search with year as a separate param first, fall back without year
+          let match = null
+          for (const searchYear of [year, null]) {
+            const { results } = await searchMovies(name, 1, searchYear || undefined)
+            if (!results?.length) continue
+            // Prefer exact title match, fall back to first result
+            const normalized = name.toLowerCase().trim()
+            match = results.find((r) =>
+              r.title?.toLowerCase().trim() === normalized ||
+              r.original_title?.toLowerCase().trim() === normalized
+            ) || results[0]
+            if (match) break
+          }
 
-            const ratingValue = isNaN(lbRating)
-              ? 'seen'
-              : lbRating >= 3.5 ? 'liked'
-              : lbRating <= 2 ? 'disliked'
-              : 'seen'
+          if (!match) { failed++; continue }
 
-            await rate({
-              tmdb_id: match.id,
-              title: match.title,
-              poster_path: match.poster_path,
-              genres: detail.genres || [],
-              keywords,
-              director: director ? { id: director.id, name: director.name } : null,
-            }, ratingValue)
-            imported++
-          } catch { failed++ }
-        }))
+          const detail = await getMovieDetails(match.id)
+          const keywords = (detail.keywords?.keywords || []).map((k) => k.name)
+          const director = detail.credits?.crew?.find((c) => c.job === 'Director')
+
+          const ratingValue = isNaN(lbRating) ? 'seen'
+            : lbRating >= 3.5 ? 'liked'
+            : lbRating <= 2   ? 'disliked'
+            : 'seen'
+
+          await rate({
+            tmdb_id: match.id,
+            title: match.title,
+            poster_path: match.poster_path,
+            genres: detail.genres || [],
+            keywords,
+            director: director ? { id: director.id, name: director.name } : null,
+          }, ratingValue)
+          imported++
+        } catch {
+          failed++
+        }
+
+        // Respect TMDB rate limit (~40 req/10s) — small delay between movies
+        await new Promise((r) => setTimeout(r, 275))
       }
 
       setLbResult({ imported, failed })
@@ -220,6 +237,7 @@ export default function Settings() {
       setLbResult({ error: err.message })
     } finally {
       setLbImporting(false)
+      setLbProgress(null)
       if (lbInputRef.current) lbInputRef.current.value = ''
     }
   }
@@ -489,11 +507,25 @@ export default function Settings() {
             <Upload size={15} />
             {lbImporting ? 'Importing…' : 'Upload ratings.csv'}
           </button>
+          {lbProgress && (
+            <div>
+              <div className="flex justify-between text-xs font-body text-text-secondary mb-1">
+                <span>Matching films on TMDB…</span>
+                <span>{lbProgress.current} / {lbProgress.total}</span>
+              </div>
+              <div className="h-1.5 bg-surface rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-accent rounded-full transition-all duration-200"
+                  style={{ width: `${(lbProgress.current / lbProgress.total) * 100}%` }}
+                />
+              </div>
+            </div>
+          )}
           {lbResult && (
             <p className={`font-body text-sm ${lbResult.error ? 'text-red-400' : 'text-emerald-400'}`}>
               {lbResult.error
                 ? `Import failed: ${lbResult.error}`
-                : `Imported ${lbResult.imported} films${lbResult.failed ? `, ${lbResult.failed} not found` : ''}.`}
+                : `Imported ${lbResult.imported} films${lbResult.failed ? ` · ${lbResult.failed} not matched` : ''}.`}
             </p>
           )}
         </div>

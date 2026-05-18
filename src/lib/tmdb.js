@@ -70,8 +70,10 @@ export async function getMovieKeywords(tmdbId) {
 /**
  * Search for movies.
  */
-export async function searchMovies(query, page = 1) {
-  return tmdbFetch('/search/movie', { query, page })
+export async function searchMovies(query, page = 1, year = null) {
+  const params = { query, page }
+  if (year) params.primary_release_year = year
+  return tmdbFetch('/search/movie', params)
 }
 
 /**

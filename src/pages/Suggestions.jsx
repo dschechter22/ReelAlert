@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Sparkles, RefreshCw, Filter } from 'lucide-react'
+import { Sparkles, RefreshCw, EyeOff } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { useRatings } from '../contexts/RatingsContext'
 import { supabase } from '../lib/supabase'
 import { discoverMovies, getMovieDetails, getWatchProviders, posterUrl, TMDB_GENRES } from '../lib/tmdb'
 import { computeReelScore, DEFAULT_SCORING_WEIGHTS } from '../lib/reelScore'
@@ -23,10 +24,12 @@ const FILTERS = [
 
 export default function Suggestions() {
   const { user } = useAuth()
+  const { ratings } = useRatings()
   const navigate = useNavigate()
   const [movies, setMovies] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeFilter, setActiveFilter] = useState('all')
+  const [hideWatched, setHideWatched] = useState(false)
   const [userPrefs, setUserPrefs] = useState(null)
 
   const loadSuggestions = useCallback(async (filter = 'all', prefs = userPrefs) => {
@@ -150,6 +153,10 @@ export default function Suggestions() {
     loadSuggestions(key, userPrefs)
   }
 
+  const displayMovies = hideWatched
+    ? movies.filter((m) => !ratings[String(m.tmdb_id)])
+    : movies
+
   return (
     <div className="min-h-screen bg-bg pb-28">
       {/* Header */}
@@ -163,21 +170,35 @@ export default function Suggestions() {
         </p>
       </div>
 
-      {/* Filter pills */}
-      <div className="px-4 pb-4 flex gap-2 overflow-x-auto scrollbar-none">
-        {FILTERS.map((f) => (
-          <button
-            key={f.key}
-            onClick={() => handleFilterChange(f.key)}
-            className={`flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-body font-medium transition-colors ${
-              activeFilter === f.key
-                ? 'bg-accent text-white'
-                : 'bg-surface text-text-secondary border border-accent-secondary/20 hover:text-text'
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
+      {/* Filter pills + hide-watched toggle */}
+      <div className="px-4 pb-3 flex items-center gap-2">
+        <div className="flex gap-2 overflow-x-auto scrollbar-none flex-1">
+          {FILTERS.map((f) => (
+            <button
+              key={f.key}
+              onClick={() => handleFilterChange(f.key)}
+              className={`flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-body font-medium transition-colors ${
+                activeFilter === f.key
+                  ? 'bg-accent text-white'
+                  : 'bg-surface text-text-secondary border border-accent-secondary/20 hover:text-text'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => setHideWatched((v) => !v)}
+          className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-body font-medium border transition-colors ${
+            hideWatched
+              ? 'bg-accent text-white border-accent'
+              : 'bg-surface text-text-secondary border-accent-secondary/20 hover:border-accent/40'
+          }`}
+          title="Hide movies you've already rated"
+        >
+          <EyeOff size={13} />
+          Hide seen
+        </button>
       </div>
 
       {/* Content */}
@@ -187,13 +208,17 @@ export default function Suggestions() {
             <RefreshCw size={24} className="text-accent animate-spin" />
             <p className="text-text-secondary font-body text-sm">Finding films for you…</p>
           </div>
-        ) : movies.length === 0 ? (
+        ) : displayMovies.length === 0 ? (
           <div className="text-center py-20">
-            <p className="text-text-secondary font-body">No suggestions found. Try a different filter.</p>
+            <p className="text-text-secondary font-body">
+              {hideWatched && movies.length > 0
+                ? "You've seen everything here — turn off 'Hide seen' to show them."
+                : 'No suggestions found. Try a different filter.'}
+            </p>
           </div>
         ) : (
           <div className="space-y-3">
-            {movies.map((movie) => (
+            {displayMovies.map((movie) => (
               <SuggestionCard key={movie.id} movie={movie} onOpen={() => navigate(`/movie/${movie.tmdb_id}`)} />
             ))}
           </div>

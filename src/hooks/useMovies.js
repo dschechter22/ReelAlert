@@ -106,7 +106,7 @@ export function useMovies(userId, tasteProfile = null) {
       setError(null)
       try {
         const prefs = uid ? await fetchUserPrefs(uid) : DEFAULT_MOCK_PREFS
-        const prefsWithTaste = { ...prefs, tasteProfile, tasteMaxAdjustment: prefs.tasteMaxAdjustment ?? 10 }
+        const prefsWithTaste = { ...prefs, tasteProfile, tasteMaxAdjustment: prefs.tasteMaxAdjustment ?? 20 }
         const scored = await fetchLiveTMDB(prefsWithTaste)
         scored.sort((a, b) => b.score - a.score)
         setMovies(scored)
@@ -148,7 +148,7 @@ async function fetchUserPrefs(userId) {
     genrePreferences: genrePrefsRes.data?.length ? genrePrefsRes.data : DEFAULT_MOCK_PREFS.genrePreferences,
     peoplePreferences: peoplePrefsRes.data || [],
     scoringWeights: sw,
-    tasteMaxAdjustment: Number(user?.user_metadata?.taste_max_adjustment ?? 10),
+    tasteMaxAdjustment: Number(user?.user_metadata?.taste_max_adjustment ?? 20),
   }
 }
 

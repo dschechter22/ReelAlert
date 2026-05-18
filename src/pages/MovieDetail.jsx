@@ -1,11 +1,19 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useMovies, useWatchlist } from '../hooks/useMovies'
-import { ArrowLeft, Bookmark, BookmarkCheck, ExternalLink } from 'lucide-react'
+import { useRatings } from '../contexts/RatingsContext'
+import { ArrowLeft, Bookmark, BookmarkCheck, ExternalLink, ThumbsUp, ThumbsDown, Eye, MinusCircle } from 'lucide-react'
 import BucketBadge from '../components/BucketBadge'
 import TabBar from '../components/TabBar'
 import StreamingBadges from '../components/StreamingBadges'
 import RatingButtons from '../components/RatingButtons'
+
+const RATING_BADGE = {
+  liked:          { label: 'You liked this', Icon: ThumbsUp,    color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20' },
+  disliked:       { label: 'You disliked this', Icon: ThumbsDown, color: 'text-red-400',   bg: 'bg-red-500/10 border-red-500/20' },
+  seen:           { label: 'You\'ve seen this', Icon: Eye,       color: 'text-accent',      bg: 'bg-accent/10 border-accent/20' },
+  not_interested: { label: 'Not for you',     Icon: MinusCircle, color: 'text-text-secondary', bg: 'bg-surface border-accent-secondary/20' },
+}
 
 const SOURCE_LABELS = {
   imdb: 'IMDb',
@@ -19,6 +27,7 @@ export default function MovieDetail() {
   const { user } = useAuth()
   const { movies } = useMovies(user?.id)
   const { addToWatchlist, removeFromWatchlist, isInWatchlist } = useWatchlist(user?.id)
+  const { getRating } = useRatings()
 
   const movie = movies.find((m) => m.id === id || String(m.tmdb_id) === id)
 
@@ -81,9 +90,23 @@ export default function MovieDetail() {
         <div className="mb-4">
           <BucketBadge bucket={bucket} className="mb-3" />
           <h1 className="font-heading font-bold text-text text-3xl leading-tight mb-2">{title}</h1>
-          <div className="flex items-baseline gap-2 mb-3">
-            <span className="text-accent font-heading font-bold text-4xl">{score}</span>
-            <span className="text-text-secondary font-body">/100 ReelScore</span>
+          <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-baseline gap-2">
+              <span className="text-accent font-heading font-bold text-4xl">{score}</span>
+              <span className="text-text-secondary font-body">/100 ReelScore</span>
+            </div>
+            {(() => {
+              const userRating = getRating(movie.tmdb_id)
+              const badge = userRating ? RATING_BADGE[userRating] : null
+              if (!badge) return null
+              const { label, Icon, color, bg } = badge
+              return (
+                <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-body font-medium border ${color} ${bg}`}>
+                  <Icon size={11} />
+                  {label}
+                </span>
+              )
+            })()}
           </div>
           <div className="flex flex-wrap gap-2">
             {(genres || []).map((g) => (

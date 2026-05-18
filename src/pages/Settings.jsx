@@ -62,7 +62,7 @@ export default function Settings() {
   const [saved, setSaved] = useState(false)
   const [testSmsSending, setTestSmsSending] = useState(false)
   const [testSmsResult, setTestSmsResult] = useState(null)
-  const [tasteMaxAdjustment, setTasteMaxAdjustment] = useState(10)
+  const [tasteMaxAdjustment, setTasteMaxAdjustment] = useState(20)
   const [showCalibration, setShowCalibration] = useState(false)
   const [lbImporting, setLbImporting] = useState(false)
   const [lbResult, setLbResult] = useState(null)
@@ -88,7 +88,7 @@ export default function Settings() {
     setSmsTime(user.user_metadata?.sms_time || '10:00')
     setSmsDay(user.user_metadata?.sms_day ?? 1)
     setScoringWeights(user.user_metadata?.scoring_weights ?? DEFAULT_SCORING_WEIGHTS)
-    setTasteMaxAdjustment(Number(user.user_metadata?.taste_max_adjustment ?? 10))
+    setTasteMaxAdjustment(Number(user.user_metadata?.taste_max_adjustment ?? 20))
 
     Promise.all([
       supabase.from('user_genre_preferences').select('*').eq('user_id', user.id),

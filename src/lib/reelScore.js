@@ -51,7 +51,7 @@ export function computeReelScore(movie, userPrefs = {}) {
     peoplePreferences = [],
     scoringWeights = DEFAULT_SCORING_WEIGHTS,
     tasteProfile = null,
-    tasteMaxAdjustment = 10,
+    tasteMaxAdjustment = 20,
   } = userPrefs
 
   const movieGenreIds = (movie.genres || []).map((g) => (typeof g === 'object' ? g.id : g))

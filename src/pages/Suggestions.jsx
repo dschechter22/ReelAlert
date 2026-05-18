@@ -24,7 +24,7 @@ const FILTERS = [
 
 export default function Suggestions() {
   const { user } = useAuth()
-  const { ratings } = useRatings()
+  const { ratings, tasteProfile } = useRatings()
   const navigate = useNavigate()
   const [movies, setMovies] = useState([])
   const [loading, setLoading] = useState(true)
@@ -109,7 +109,8 @@ export default function Suggestions() {
           letterboxd_score: omdb?.letterboxd_score ?? null,
         }
 
-        return { ...movie, ...computeReelScore(movie, prefs || {}) }
+        const enrichedPrefs = { ...(prefs || {}), tasteProfile }
+        return { ...movie, ...computeReelScore(movie, enrichedPrefs) }
       }).filter(Boolean)
 
       scored.sort((a, b) => b.score - a.score)
@@ -120,7 +121,7 @@ export default function Suggestions() {
     } finally {
       setLoading(false)
     }
-  }, [userPrefs])
+  }, [userPrefs, tasteProfile])
 
   useEffect(() => {
     async function init() {
@@ -139,6 +140,7 @@ export default function Suggestions() {
             scoringWeights: raw
               ? { imdb: Number(raw.imdb) || 33, rt: Number(raw.rt) || 33, lb: Number(raw.lb) || 34 }
               : DEFAULT_SCORING_WEIGHTS,
+            tasteMaxAdjustment: Number(authUser?.user_metadata?.taste_max_adjustment ?? 20),
           }
         } catch { /* use defaults */ }
       }

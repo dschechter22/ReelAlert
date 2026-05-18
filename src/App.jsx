@@ -8,6 +8,9 @@ import MovieDetail from './pages/MovieDetail.jsx'
 import Theaters from './pages/Theaters.jsx'
 import Watchlist from './pages/Watchlist.jsx'
 import Settings from './pages/Settings.jsx'
+import TermsOfService from './pages/TermsOfService.jsx'
+import PrivacyPolicy from './pages/PrivacyPolicy.jsx'
+import Suggestions from './pages/Suggestions.jsx'
 
 export default function App() {
   return (
@@ -56,6 +59,16 @@ export default function App() {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/suggestions"
+              element={
+                <ProtectedRoute>
+                  <Suggestions />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="/terms" element={<TermsOfService />} />
+            <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>

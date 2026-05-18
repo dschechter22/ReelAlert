@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { Film, Bell, Star, ChevronRight, Check } from 'lucide-react'
 
@@ -241,7 +241,12 @@ export default function Landing() {
           <Film size={16} className="text-accent" />
           <span className="font-heading font-semibold text-text">ReelAlert</span>
         </div>
-        <p>Your taste. In theaters. In your texts.</p>
+        <p className="mb-3">Your taste. In theaters. In your texts.</p>
+        <div className="flex items-center justify-center gap-4 text-xs text-text-secondary/60">
+          <Link to="/terms" className="hover:text-text-secondary transition-colors">Terms of Service</Link>
+          <span>·</span>
+          <Link to="/privacy" className="hover:text-text-secondary transition-colors">Privacy Policy</Link>
+        </div>
       </footer>
 
       {/* Auth Modal */}
@@ -306,6 +311,14 @@ export default function Landing() {
                 <>Already a member? <button onClick={() => setShowAuth('login')} className="text-accent hover:underline">Log in</button></>
               )}
             </p>
+            {showAuth === 'signup' && (
+              <p className="mt-3 text-center text-text-secondary/50 text-xs font-body">
+                By signing up, you agree to our{' '}
+                <Link to="/terms" className="underline hover:text-text-secondary">Terms of Service</Link>
+                {' '}and{' '}
+                <Link to="/privacy" className="underline hover:text-text-secondary">Privacy Policy</Link>.
+              </p>
+            )}
           </div>
         </div>
       )}

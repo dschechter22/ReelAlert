@@ -3,12 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { Sparkles, RefreshCw, Filter } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
-import { discoverMovies, getMovieDetails, posterUrl, TMDB_GENRES } from '../lib/tmdb'
+import { discoverMovies, getMovieDetails, getWatchProviders, posterUrl, TMDB_GENRES } from '../lib/tmdb'
 import { computeReelScore, DEFAULT_SCORING_WEIGHTS } from '../lib/reelScore'
 import { fetchOMDbRatings } from '../lib/omdb'
 import { DEFAULT_MOCK_PREFS } from '../lib/mockData'
 import BucketBadge from '../components/BucketBadge'
 import TabBar from '../components/TabBar'
+import StreamingBadges from '../components/StreamingBadges'
 
 const GENRE_MAP = Object.fromEntries(TMDB_GENRES.map((g) => [g.id, g.name]))
 
@@ -17,6 +18,7 @@ const FILTERS = [
   { key: 'must_see', label: 'Must-See Genres' },
   { key: 'top_rated', label: 'Top Rated' },
   { key: 'hidden_gems', label: 'Hidden Gems' },
+  { key: 'streaming', label: 'Streaming Now' },
 ]
 
 export default function Suggestions() {
@@ -50,6 +52,9 @@ export default function Suggestions() {
       } else if (filter === 'top_rated') {
         const [p1, p2] = await Promise.all([discoverMovies({ minVotes: 500 }), discoverMovies({ page: 2, minVotes: 500 })])
         results = [...(p1.results || []), ...(p2.results || [])]
+      } else if (filter === 'streaming') {
+        const [p1, p2] = await Promise.all([discoverMovies({ minVotes: 100 }), discoverMovies({ page: 2, minVotes: 100 })])
+        results = [...(p1.results || []), ...(p2.results || [])]
       } else {
         // 'all' — blend discover pages
         const [p1, p2] = await Promise.all([discoverMovies({ minVotes: 200 }), discoverMovies({ page: 2, minVotes: 200 })])
@@ -63,9 +68,20 @@ export default function Suggestions() {
       // Fetch details + OMDb for top 20
       const slice = results.slice(0, 20)
       const details = await Promise.allSettled(slice.map((m) => getMovieDetails(m.id)))
-      const omdbResults = await Promise.allSettled(
-        details.map((d) => d.status === 'fulfilled' ? fetchOMDbRatings(d.value.imdb_id) : null)
-      )
+      const [omdbResults, providerResults] = await Promise.all([
+        Promise.allSettled(details.map((d) => d.status === 'fulfilled' ? fetchOMDbRatings(d.value.imdb_id) : null)),
+        Promise.allSettled(slice.map((m) => getWatchProviders(m.id))),
+      ])
+
+      // For streaming filter, keep only movies with flatrate providers
+      if (filter === 'streaming') {
+        const streamingIds = new Set(
+          providerResults
+            .map((r, i) => (r.status === 'fulfilled' && r.value?.flatrate?.length ? slice[i].id : null))
+            .filter(Boolean)
+        )
+        results = results.filter((m) => streamingIds.has(m.id))
+      }
 
       const scored = details.map((res, i) => {
         if (res.status !== 'fulfilled') return null
@@ -246,9 +262,12 @@ function SuggestionCard({ movie, onOpen }) {
         </div>
 
         <div className="flex items-center justify-between mt-2">
-          <div className="flex items-center gap-1">
-            <span className="text-accent font-heading font-bold text-lg leading-none">{score}</span>
-            <span className="text-text-secondary text-xs font-body">/100</span>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
+              <span className="text-accent font-heading font-bold text-lg leading-none">{score}</span>
+              <span className="text-text-secondary text-xs font-body">/100</span>
+            </div>
+            <StreamingBadges tmdbId={movie.tmdb_id} compact />
           </div>
           <button onClick={onOpen} className="text-accent text-sm font-medium font-body hover:opacity-80 transition-opacity">
             Details →

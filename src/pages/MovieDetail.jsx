@@ -4,6 +4,7 @@ import { useMovies, useWatchlist } from '../hooks/useMovies'
 import { ArrowLeft, Bookmark, BookmarkCheck, ExternalLink } from 'lucide-react'
 import BucketBadge from '../components/BucketBadge'
 import TabBar from '../components/TabBar'
+import StreamingBadges from '../components/StreamingBadges'
 
 const SOURCE_LABELS = {
   imdb: 'IMDb',
@@ -182,6 +183,14 @@ export default function MovieDetail() {
             </div>
           </div>
         )}
+
+        {/* Streaming availability */}
+        <div className="mb-6">
+          <h2 className="font-heading font-semibold text-text text-lg mb-3">Where to Watch</h2>
+          <div className="bg-surface rounded-2xl px-4 py-4">
+            <StreamingBadges tmdbId={movie.tmdb_id} />
+          </div>
+        </div>
 
         {/* Release */}
         {release_date && (

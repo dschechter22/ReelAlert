@@ -1,5 +1,6 @@
 import { X, Star, Heart, AlertTriangle } from 'lucide-react'
 import BucketBadge from './BucketBadge'
+import StreamingBadges from './StreamingBadges'
 
 export default function ReelScoreDrawer({ movie, onClose }) {
   if (!movie) return null
@@ -151,6 +152,12 @@ export default function ReelScoreDrawer({ movie, onClose }) {
                 </div>
               </>
             )}
+          </div>
+
+          {/* Streaming availability */}
+          <div className="px-5 pb-4">
+            <h3 className="font-heading font-semibold text-text text-base mb-3">Where to Watch</h3>
+            <StreamingBadges tmdbId={movie.tmdb_id} />
           </div>
 
           {/* Cast & Director */}

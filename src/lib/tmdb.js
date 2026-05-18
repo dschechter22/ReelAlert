@@ -41,6 +41,15 @@ export async function getTopRated(page = 1) {
 }
 
 /**
+ * Get streaming/rental/purchase availability for a movie.
+ * Returns US providers by default. Data sourced from JustWatch via TMDB.
+ */
+export async function getWatchProviders(tmdbId, region = 'US') {
+  const data = await tmdbFetch(`/movie/${tmdbId}/watch/providers`)
+  return data.results?.[region] ?? null
+}
+
+/**
  * Get detailed movie info.
  */
 export async function getMovieDetails(tmdbId) {

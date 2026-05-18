@@ -159,16 +159,25 @@ export default function Settings() {
 
     try {
       const text = await file.text()
-      const lines = text.trim().split('\n')
-      const header = lines[0].split(',').map((h) => h.trim().replace(/^"|"$/g, ''))
-      const nameIdx = header.findIndex((h) => h === 'Name')
-      const yearIdx = header.findIndex((h) => h === 'Year')
+      const lines = text.trim().split('\n').filter(Boolean)
+
+      // Auto-detect delimiter (tab or comma)
+      const delim = lines[0].includes('\t') ? '\t' : ','
+      const header = lines[0].split(delim).map((h) => h.trim().replace(/^"|"$/g, ''))
+
+      const nameIdx   = header.findIndex((h) => h === 'Name')
+      const yearIdx   = header.findIndex((h) => h === 'Year')
       const ratingIdx = header.findIndex((h) => h === 'Rating')
 
+      if (nameIdx === -1) { setLbResult({ error: 'Could not find a "Name" column. Make sure you\'re uploading the correct Letterboxd ratings file.' }); return }
+
       const rows = lines.slice(1).map((line) => {
-        // Handle quoted fields with commas
-        const cols = line.match(/(".*?"|[^,]+)(?=,|$)/g)?.map((c) => c.replace(/^"|"$/g, '').trim()) ?? line.split(',')
-        return { name: cols[nameIdx], year: cols[yearIdx], rating: parseFloat(cols[ratingIdx]) }
+        const cols = line.split(delim).map((c) => c.trim().replace(/^"|"$/g, ''))
+        return {
+          name: cols[nameIdx],
+          year: yearIdx !== -1 ? cols[yearIdx] : '',
+          rating: ratingIdx !== -1 ? parseFloat(cols[ratingIdx]) : NaN,
+        }
       }).filter((r) => r.name)
 
       let imported = 0

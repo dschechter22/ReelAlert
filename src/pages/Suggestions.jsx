@@ -97,7 +97,7 @@ export default function Suggestions() {
         const perPersonFetches = await Promise.allSettled(
           personIds.flatMap((personId) =>
             currentPages.map((page) =>
-              discoverMovies({ genreIds, page, minVotes: 30, withCast: [personId] })
+              discoverMovies({ genreIds, page, minVotes: 30, withPeople: [personId] })
             )
           )
         )

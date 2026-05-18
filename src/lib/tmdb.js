@@ -22,16 +22,16 @@ export async function getNowPlaying(page = 1) {
 }
 
 /**
- * Discover movies filtered by genre IDs (OR logic) and optionally cast members.
- * withCast: array of TMDB person IDs (AND — all must appear).
+ * Discover movies filtered by genre IDs (OR logic) and optionally people (cast OR crew).
+ * withCast: matches actors only. withPeople: matches cast OR crew (use for directors too).
  */
-export async function discoverMovies({ genreIds = [], page = 1, sortBy = 'vote_average.desc', minVotes = 200, withCast = [] } = {}) {
+export async function discoverMovies({ genreIds = [], page = 1, sortBy = 'vote_average.desc', minVotes = 200, withCast = [], withPeople = [] } = {}) {
   return tmdbFetch('/discover/movie', {
     page,
     sort_by: sortBy,
     'vote_count.gte': minVotes,
     ...(genreIds.length ? { with_genres: genreIds.join('|') } : {}),
-    ...(withCast.length ? { with_cast: withCast.join(',') } : {}),
+    ...(withPeople.length ? { with_people: withPeople.join(',') } : withCast.length ? { with_cast: withCast.join(',') } : {}),
   })
 }
 

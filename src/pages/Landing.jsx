@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { Film, Bell, Star, ChevronRight, Check } from 'lucide-react'
+import { Film, Bell, Star, ChevronRight, Check, Mail } from 'lucide-react'
 
 const FEATURES = [
   {
@@ -52,12 +52,13 @@ Full details at reelalert.app
 Reply STOP to unsubscribe.`
 
 export default function Landing() {
-  const [showAuth, setShowAuth] = useState(null) // 'login' | 'signup'
+  const [showAuth, setShowAuth] = useState(null) // 'login' | 'signup' | 'forgot'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [authError, setAuthError] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
-  const { signIn, signUp, user } = useAuth()
+  const [resetSent, setResetSent] = useState(false)
+  const { signIn, signUp, resetPassword, user } = useAuth()
   const navigate = useNavigate()
 
   if (user) {
@@ -70,7 +71,10 @@ export default function Landing() {
     setAuthError('')
     setAuthLoading(true)
     try {
-      if (showAuth === 'login') {
+      if (showAuth === 'forgot') {
+        await resetPassword(email)
+        setResetSent(true)
+      } else if (showAuth === 'login') {
         await signIn(email, password)
         navigate('/dashboard')
       } else {
@@ -82,6 +86,14 @@ export default function Landing() {
     } finally {
       setAuthLoading(false)
     }
+  }
+
+  function openAuth(mode) {
+    setShowAuth(mode)
+    setAuthError('')
+    setResetSent(false)
+    setEmail('')
+    setPassword('')
   }
 
   return (
@@ -96,13 +108,13 @@ export default function Landing() {
           </div>
           <div className="flex gap-2">
             <button
-              onClick={() => setShowAuth('login')}
+              onClick={() => openAuth('login')}
               className="px-4 py-1.5 rounded-lg text-sm font-medium text-text-secondary hover:text-text transition-colors font-body"
             >
               Log in
             </button>
             <button
-              onClick={() => setShowAuth('signup')}
+              onClick={() => openAuth('signup')}
               className="px-4 py-1.5 rounded-lg text-sm font-medium bg-accent text-white hover:opacity-90 transition-opacity font-body"
             >
               Sign up
@@ -128,14 +140,14 @@ export default function Landing() {
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <button
-            onClick={() => setShowAuth('signup')}
+            onClick={() => openAuth('signup')}
             className="inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-accent text-white rounded-xl font-medium text-base hover:opacity-90 transition-opacity font-body"
           >
             Get started free
             <ChevronRight size={18} />
           </button>
           <button
-            onClick={() => setShowAuth('login')}
+            onClick={() => openAuth('login')}
             className="inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-surface text-text rounded-xl font-medium text-base hover:opacity-80 transition-opacity border border-accent-secondary/30 font-body"
           >
             I have an account
@@ -218,7 +230,7 @@ export default function Landing() {
             No credit card required. Setup takes under 2 minutes.
           </p>
           <button
-            onClick={() => setShowAuth('signup')}
+            onClick={() => openAuth('signup')}
             className="inline-flex items-center gap-2 px-8 py-3.5 bg-accent text-white rounded-xl font-medium hover:opacity-90 transition-opacity font-body"
           >
             Create free account
@@ -260,55 +272,80 @@ export default function Landing() {
             <div className="flex items-center gap-2 mb-6">
               <Film size={20} className="text-accent" />
               <span className="font-heading font-bold text-text text-lg">
-                {showAuth === 'login' ? 'Welcome back' : 'Create your account'}
+                {showAuth === 'login' ? 'Welcome back' : showAuth === 'forgot' ? 'Reset your password' : 'Create your account'}
               </span>
             </div>
 
-            <form onSubmit={handleAuth} className="space-y-4">
-              <div>
-                <label className="block text-text-secondary text-sm font-body mb-1.5">Email</label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  className="w-full bg-surface border border-accent-secondary/20 rounded-xl px-4 py-3 text-text font-body text-sm placeholder-text-secondary focus:outline-none focus:border-accent/50 transition-colors"
-                />
-              </div>
-              <div>
-                <label className="block text-text-secondary text-sm font-body mb-1.5">Password</label>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Min. 6 characters"
-                  className="w-full bg-surface border border-accent-secondary/20 rounded-xl px-4 py-3 text-text font-body text-sm placeholder-text-secondary focus:outline-none focus:border-accent/50 transition-colors"
-                />
-              </div>
-
-              {authError && (
-                <p className="text-red-400 text-sm font-body bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-                  {authError}
+            {/* Forgot password — sent state */}
+            {showAuth === 'forgot' && resetSent ? (
+              <div className="text-center py-4">
+                <Mail size={36} className="text-accent mx-auto mb-3" />
+                <p className="text-text font-body text-sm font-medium mb-1">Check your inbox</p>
+                <p className="text-text-secondary font-body text-sm">
+                  We sent a password reset link to <span className="text-text">{email}</span>.
                 </p>
-              )}
+                <button onClick={() => openAuth('login')} className="mt-5 text-accent text-sm font-body hover:underline">
+                  Back to log in
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleAuth} className="space-y-4">
+                <div>
+                  <label className="block text-text-secondary text-sm font-body mb-1.5">Email</label>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    className="w-full bg-surface border border-accent-secondary/20 rounded-xl px-4 py-3 text-text font-body text-sm placeholder-text-secondary focus:outline-none focus:border-accent/50 transition-colors"
+                  />
+                </div>
+                {showAuth !== 'forgot' && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-text-secondary text-sm font-body">Password</label>
+                      {showAuth === 'login' && (
+                        <button type="button" onClick={() => openAuth('forgot')} className="text-accent text-xs font-body hover:underline">
+                          Forgot password?
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="password"
+                      required
+                      minLength={6}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Min. 6 characters"
+                      className="w-full bg-surface border border-accent-secondary/20 rounded-xl px-4 py-3 text-text font-body text-sm placeholder-text-secondary focus:outline-none focus:border-accent/50 transition-colors"
+                    />
+                  </div>
+                )}
 
-              <button
-                type="submit"
-                disabled={authLoading}
-                className="w-full py-3 bg-accent text-white rounded-xl font-medium font-body hover:opacity-90 transition-opacity disabled:opacity-60"
-              >
-                {authLoading ? 'Please wait…' : showAuth === 'login' ? 'Log in' : 'Create account'}
-              </button>
-            </form>
+                {authError && (
+                  <p className="text-red-400 text-sm font-body bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                    {authError}
+                  </p>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={authLoading}
+                  className="w-full py-3 bg-accent text-white rounded-xl font-medium font-body hover:opacity-90 transition-opacity disabled:opacity-60"
+                >
+                  {authLoading ? 'Please wait…' : showAuth === 'login' ? 'Log in' : showAuth === 'forgot' ? 'Send reset link' : 'Create account'}
+                </button>
+              </form>
+            )}
 
             <p className="mt-4 text-center text-text-secondary text-sm font-body">
               {showAuth === 'login' ? (
-                <>No account? <button onClick={() => setShowAuth('signup')} className="text-accent hover:underline">Sign up</button></>
+                <>No account? <button onClick={() => openAuth('signup')} className="text-accent hover:underline">Sign up</button></>
+              ) : showAuth === 'forgot' ? (
+                <><button onClick={() => openAuth('login')} className="text-accent hover:underline">Back to log in</button></>
               ) : (
-                <>Already a member? <button onClick={() => setShowAuth('login')} className="text-accent hover:underline">Log in</button></>
+                <>Already a member? <button onClick={() => openAuth('login')} className="text-accent hover:underline">Log in</button></>
               )}
             </p>
             {showAuth === 'signup' && (

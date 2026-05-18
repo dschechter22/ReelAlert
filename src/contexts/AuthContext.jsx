@@ -58,6 +58,18 @@ export function AuthProvider({ children }) {
     return data
   }
 
+  async function resetPassword(email) {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    })
+    if (error) throw error
+  }
+
+  async function updatePassword(newPassword) {
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
+    if (error) throw error
+  }
+
   async function updateProfile(updates) {
     const { data, error } = await supabase
       .from('users')
@@ -76,6 +88,8 @@ export function AuthProvider({ children }) {
         signUp,
         signIn,
         signOut,
+        resetPassword,
+        updatePassword,
         enrollTotp,
         challengeTotp,
         verifyTotp,

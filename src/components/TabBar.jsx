@@ -30,11 +30,11 @@ const TABS = [
     ),
   },
   {
-    to: '/watchlist',
-    label: 'Watchlist',
+    to: '/my-films',
+    label: 'My Films',
     icon: (active) => (
       <svg viewBox="0 0 24 24" fill={active ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={active ? 0 : 1.5} className="w-6 h-6">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 0 1-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5m0-11.25A2.625 2.625 0 0 1 6 3.375h12A2.625 2.625 0 0 1 20.625 6v12.375m-18 0A2.625 2.625 0 0 0 5.25 21h13.5a2.625 2.625 0 0 0 2.625-2.625M12 9.75v6m-3-3h6" />
       </svg>
     ),
   },

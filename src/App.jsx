@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard.jsx'
 import MovieDetail from './pages/MovieDetail.jsx'
 import Theaters from './pages/Theaters.jsx'
 import Watchlist from './pages/Watchlist.jsx'
+import MyFilms from './pages/MyFilms.jsx'
 import Settings from './pages/Settings.jsx'
 import TermsOfService from './pages/TermsOfService.jsx'
 import PrivacyPolicy from './pages/PrivacyPolicy.jsx'
@@ -48,9 +49,13 @@ export default function App() {
             />
             <Route
               path="/watchlist"
+              element={<Navigate to="/my-films" replace />}
+            />
+            <Route
+              path="/my-films"
               element={
                 <ProtectedRoute>
-                  <Watchlist />
+                  <MyFilms />
                 </ProtectedRoute>
               }
             />

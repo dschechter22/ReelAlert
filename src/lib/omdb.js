@@ -1,5 +1,5 @@
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
-const PROXY_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/omdb-proxy`
+const OMDB_API_KEY = import.meta.env.VITE_OMDB_API_KEY
+const OMDB_BASE = 'https://www.omdbapi.com'
 
 // In-memory cache so the same movie isn't fetched twice per session
 const _cache = new Map()
@@ -7,19 +7,26 @@ const _cache = new Map()
 export async function fetchOMDbRatings(imdbId) {
   if (!imdbId) return null
   if (_cache.has(imdbId)) return _cache.get(imdbId)
+  if (!OMDB_API_KEY) return null
 
   try {
-    // Pass apikey as a query param (not a header) so the browser sends a
-    // simple GET with no custom headers — avoiding a CORS preflight entirely.
-    const url = new URL(PROXY_BASE)
-    url.searchParams.set('imdb_id', imdbId)
-    url.searchParams.set('apikey', SUPABASE_ANON_KEY)
+    const url = new URL(OMDB_BASE)
+    url.searchParams.set('i', imdbId)
+    url.searchParams.set('apikey', OMDB_API_KEY)
 
     const res = await fetch(url.toString())
     if (!res.ok) return null
     const data = await res.json()
-    _cache.set(imdbId, data)
-    return data
+    if (data.Response === 'False') return null
+
+    const rtEntry = (data.Ratings || []).find((r) => r.Source === 'Rotten Tomatoes')
+    const result = {
+      imdb_score: data.imdbRating && data.imdbRating !== 'N/A' ? parseFloat(data.imdbRating) : null,
+      rt_critic: rtEntry ? parseInt(rtEntry.Value.replace('%', ''), 10) : null,
+      letterboxd_score: null, // requires server-side scraping
+    }
+    _cache.set(imdbId, result)
+    return result
   } catch {
     return null
   }

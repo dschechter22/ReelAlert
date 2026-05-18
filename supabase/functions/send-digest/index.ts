@@ -16,6 +16,12 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const TWILIO_ACCOUNT_SID = Deno.env.get('TWILIO_ACCOUNT_SID')!
@@ -158,9 +164,11 @@ async function sendDigestForUser(user: UserRow): Promise<void> {
 // ─────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS })
+
   // Allow both GET (cron) and POST (manual trigger)
   if (req.method !== 'GET' && req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 })
+    return new Response('Method not allowed', { status: 405, headers: CORS })
   }
 
   const reqUrl = new URL(req.url)
@@ -177,7 +185,7 @@ Deno.serve(async (req: Request) => {
     if (!user) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...CORS },
       })
     }
 
@@ -185,7 +193,7 @@ Deno.serve(async (req: Request) => {
     if (!phone) {
       return new Response(JSON.stringify({ error: 'No phone number saved. Add your phone number in Settings first.' }), {
         status: 400,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...CORS },
       })
     }
 
@@ -197,14 +205,14 @@ Deno.serve(async (req: Request) => {
 
     await sendDigestForUser(testUser)
     return new Response(JSON.stringify({ sent: 1 }), {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...CORS },
     })
   }
 
   // Normal mode: require service role key (or no auth for cron)
   const expectedBearer = `Bearer ${SUPABASE_SERVICE_KEY}`
   if (authHeader && authHeader !== expectedBearer) {
-    return new Response('Unauthorized', { status: 401 })
+    return new Response('Unauthorized', { status: 401, headers: CORS })
   }
 
   console.log('Starting digest send run…')
@@ -223,7 +231,7 @@ Deno.serve(async (req: Request) => {
     if (!users || users.length === 0) {
       console.log('No users with phone numbers found.')
       return new Response(JSON.stringify({ sent: 0 }), {
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...CORS },
       })
     }
 
@@ -241,13 +249,13 @@ Deno.serve(async (req: Request) => {
     console.log(`Digest run complete. Processed ${sent} users.`)
 
     return new Response(JSON.stringify({ sent, users: users.length }), {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...CORS },
     })
   } catch (err) {
     console.error('Digest run failed:', err)
     return new Response(JSON.stringify({ error: String(err) }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...CORS },
     })
   }
 })

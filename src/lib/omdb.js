@@ -20,10 +20,12 @@ export async function fetchOMDbRatings(imdbId) {
     if (data.Response === 'False') return null
 
     const rtEntry = (data.Ratings || []).find((r) => r.Source === 'Rotten Tomatoes')
+    const imdbParsed = data.imdbRating && data.imdbRating !== 'N/A' ? parseFloat(data.imdbRating) : null
+    const rtParsed = rtEntry ? parseInt(rtEntry.Value.replace('%', ''), 10) : null
     const result = {
-      imdb_score: data.imdbRating && data.imdbRating !== 'N/A' ? parseFloat(data.imdbRating) : null,
-      rt_critic: rtEntry ? parseInt(rtEntry.Value.replace('%', ''), 10) : null,
-      letterboxd_score: null, // requires server-side scraping
+      imdb_score: Number.isFinite(imdbParsed) ? imdbParsed : null,
+      rt_critic: Number.isFinite(rtParsed) ? rtParsed : null,
+      letterboxd_score: null,
     }
     _cache.set(imdbId, result)
     return result

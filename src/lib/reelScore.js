@@ -23,11 +23,11 @@ export const DEFAULT_SCORING_WEIGHTS = { imdb: 33, rt: 33, lb: 34 }
 
 function weightedBase(movie, weights = DEFAULT_SCORING_WEIGHTS) {
   const sources = []
-  if (movie.imdb_score != null)
+  if (Number.isFinite(movie.imdb_score))
     sources.push({ value: Math.round(movie.imdb_score * 10), weight: weights.imdb })
-  if (movie.rt_critic != null)
+  if (Number.isFinite(movie.rt_critic))
     sources.push({ value: movie.rt_critic, weight: weights.rt })
-  if (movie.letterboxd_score != null)
+  if (Number.isFinite(movie.letterboxd_score))
     sources.push({ value: Math.round(movie.letterboxd_score * 20), weight: weights.lb })
 
   if (!sources.length) return 50
@@ -110,16 +110,16 @@ export function computeReelScore(movie, userPrefs = {}) {
       weightPct: pct,
       sources: {
         imdb: {
-          value: movie.imdb_score,
-          displayValue: movie.imdb_score != null ? `${movie.imdb_score}/10` : 'N/A',
+          value: Number.isFinite(movie.imdb_score) ? movie.imdb_score : null,
+          displayValue: Number.isFinite(movie.imdb_score) ? `${movie.imdb_score}/10` : 'N/A',
         },
         rt_critic: {
-          value: movie.rt_critic,
-          displayValue: movie.rt_critic != null ? `${movie.rt_critic}%` : 'N/A',
+          value: Number.isFinite(movie.rt_critic) ? movie.rt_critic : null,
+          displayValue: Number.isFinite(movie.rt_critic) ? `${movie.rt_critic}%` : 'N/A',
         },
         letterboxd: {
-          value: movie.letterboxd_score,
-          displayValue: movie.letterboxd_score != null ? `${movie.letterboxd_score}/5` : 'N/A',
+          value: Number.isFinite(movie.letterboxd_score) ? movie.letterboxd_score : null,
+          displayValue: Number.isFinite(movie.letterboxd_score) ? `${movie.letterboxd_score}/5` : 'N/A',
         },
       },
     },

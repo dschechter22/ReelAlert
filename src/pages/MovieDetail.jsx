@@ -5,6 +5,7 @@ import { ArrowLeft, Bookmark, BookmarkCheck, ExternalLink } from 'lucide-react'
 import BucketBadge from '../components/BucketBadge'
 import TabBar from '../components/TabBar'
 import StreamingBadges from '../components/StreamingBadges'
+import RatingButtons from '../components/RatingButtons'
 
 const SOURCE_LABELS = {
   imdb: 'IMDb',
@@ -92,6 +93,12 @@ export default function MovieDetail() {
               </span>
             ))}
           </div>
+        </div>
+
+        {/* Rating */}
+        <div className="mb-6">
+          <h2 className="font-heading font-semibold text-text text-lg mb-3">Rate This Film</h2>
+          <RatingButtons movie={movie} />
         </div>
 
         {/* Synopsis */}

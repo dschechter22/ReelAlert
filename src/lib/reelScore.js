@@ -1,3 +1,5 @@
+import { computeTasteBonus } from './tasteProfile.js'
+
 /**
  * ReelScore computation — IMDb, RT Critic, and Letterboxd, weighted by user
  * preference, adjusted by genre/people preferences.
@@ -48,6 +50,8 @@ export function computeReelScore(movie, userPrefs = {}) {
     genrePreferences = [],
     peoplePreferences = [],
     scoringWeights = DEFAULT_SCORING_WEIGHTS,
+    tasteProfile = null,
+    tasteMaxAdjustment = 10,
   } = userPrefs
 
   const movieGenreIds = (movie.genres || []).map((g) => (typeof g === 'object' ? g.id : g))
@@ -75,6 +79,8 @@ export function computeReelScore(movie, userPrefs = {}) {
   if (hasFavoritePerson) score = Math.min(100, score + 15)
   if (hasNeverGenre)     score = Math.max(0,   score - 25)
   if (hasExcludedPerson) score = Math.max(0,   score - 30)
+  const tasteBonus = computeTasteBonus(movie, tasteProfile, tasteMaxAdjustment)
+  score = Math.min(100, Math.max(0, score + tasteBonus))
   score = Number.isFinite(score) ? score : 50
 
   let bucket
@@ -108,6 +114,7 @@ export function computeReelScore(movie, userPrefs = {}) {
       hasNeverGenre,
       hasFavoritePerson,
       hasExcludedPerson,
+      tasteBonus,
       weightPct: pct,
       sources: {
         imdb: {

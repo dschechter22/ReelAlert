@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { useRatings } from '../contexts/RatingsContext'
 import { useMovies, useWatchlist } from '../hooks/useMovies'
 import MovieCard from '../components/MovieCard'
 import ReelScoreDrawer from '../components/ReelScoreDrawer'
 import TabBar from '../components/TabBar'
 import OnboardingModal from '../modals/OnboardingModal'
+import CalibrationBanner from '../components/CalibrationBanner'
 import { Film, Search, SlidersHorizontal } from 'lucide-react'
 
 const BUCKET_FILTERS = [
@@ -17,8 +19,10 @@ const BUCKET_FILTERS = [
 
 export default function Dashboard() {
   const { user } = useAuth()
-  const { movies, loading } = useMovies(user?.id)
+  const { tasteProfile, ratings } = useRatings()
+  const { movies, loading } = useMovies(user?.id, tasteProfile)
   const { addToWatchlist, removeFromWatchlist, isInWatchlist } = useWatchlist(user?.id)
+  const ratingCount = Object.keys(ratings).length
   const [selectedMovie, setSelectedMovie] = useState(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [bucketFilter, setBucketFilter] = useState('all')
@@ -102,8 +106,13 @@ export default function Dashboard() {
         </div>
       </header>
 
+      {/* Calibration banner */}
+      <div className="max-w-2xl mx-auto pt-3">
+        <CalibrationBanner ratingCount={ratingCount} />
+      </div>
+
       {/* Movie list */}
-      <main className="max-w-2xl mx-auto px-4 pt-4 space-y-3">
+      <main className="max-w-2xl mx-auto px-4 pt-1 space-y-3">
         {loading ? (
           Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="bg-surface rounded-2xl h-36 animate-pulse" />

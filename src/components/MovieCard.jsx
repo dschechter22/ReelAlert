@@ -1,5 +1,6 @@
 import { ChevronRight, Bookmark, BookmarkCheck } from 'lucide-react'
 import BucketBadge from './BucketBadge'
+import RatingButtons from './RatingButtons'
 
 export default function MovieCard({ movie, onOpenDrawer, onWatchlistToggle, inWatchlist }) {
   const { title, genres, score, bucket, posterGradient, poster_path, imdb_score, rt_critic, letterboxd_score } = movie
@@ -94,9 +95,7 @@ export default function MovieCard({ movie, onOpenDrawer, onWatchlistToggle, inWa
               <span className="text-accent font-heading font-bold text-lg leading-none">{score}</span>
               <span className="text-text-secondary text-xs font-body">/100</span>
             </div>
-            <span className="text-text-secondary text-xs font-body hidden sm:inline">ReelScore</span>
           </div>
-
           <button
             onClick={() => onOpenDrawer?.(movie)}
             className="flex items-center gap-1 text-accent text-sm font-medium font-body hover:opacity-80 transition-opacity"
@@ -104,6 +103,9 @@ export default function MovieCard({ movie, onOpenDrawer, onWatchlistToggle, inWa
             Details
             <ChevronRight size={16} />
           </button>
+        </div>
+        <div className="mt-2 pt-2 border-t border-accent-secondary/10">
+          <RatingButtons movie={movie} compact />
         </div>
       </div>
     </div>

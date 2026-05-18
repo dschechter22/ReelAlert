@@ -54,8 +54,17 @@ export async function getWatchProviders(tmdbId, region = 'US') {
  */
 export async function getMovieDetails(tmdbId) {
   return tmdbFetch(`/movie/${tmdbId}`, {
-    append_to_response: 'credits,videos,release_dates',
+    append_to_response: 'credits,videos,release_dates,keywords',
   })
+}
+
+/**
+ * Get keywords for a movie (extracted from getMovieDetails if already fetched,
+ * or fetched standalone when needed at rating time).
+ */
+export async function getMovieKeywords(tmdbId) {
+  const data = await tmdbFetch(`/movie/${tmdbId}/keywords`)
+  return (data.keywords || []).map((k) => k.name)
 }
 
 /**

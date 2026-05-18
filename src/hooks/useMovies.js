@@ -36,6 +36,7 @@ function mapTMDBDetail(detail) {
   const trailer = detail.videos?.results?.find(
     (v) => v.type === 'Trailer' && v.site === 'YouTube'
   )
+  const keywords = (detail.keywords?.keywords || []).map((k) => k.name)
   return {
     id: `tmdb-${detail.id}`,
     tmdb_id: detail.id,
@@ -52,6 +53,7 @@ function mapTMDBDetail(detail) {
     poster_url: posterUrl(detail.poster_path),
     backdrop_url: backdropUrl(detail.backdrop_path, 'original'),
     genres: (detail.genres || []).map((g) => ({ id: g.id, name: g.name })),
+    keywords,
     release_date: detail.release_date,
     in_theaters_until: null,
     trailer_url: trailer ? `https://www.youtube.com/watch?v=${trailer.key}` : null,
@@ -93,7 +95,7 @@ async function fetchLiveTMDB(userPrefs) {
   return enriched.map((m) => ({ ...m, ...computeReelScore(m, userPrefs) }))
 }
 
-export function useMovies(userId) {
+export function useMovies(userId, tasteProfile = null) {
   const [movies, setMovies] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -104,21 +106,23 @@ export function useMovies(userId) {
       setError(null)
       try {
         const prefs = uid ? await fetchUserPrefs(uid) : DEFAULT_MOCK_PREFS
-        const scored = await fetchLiveTMDB(prefs)
+        const prefsWithTaste = { ...prefs, tasteProfile, tasteMaxAdjustment: prefs.tasteMaxAdjustment ?? 10 }
+        const scored = await fetchLiveTMDB(prefsWithTaste)
         scored.sort((a, b) => b.score - a.score)
         setMovies(scored)
       } catch (err) {
         console.warn('useMovies falling back to mock data:', err.message)
         setError(err.message)
         const prefs = uid ? await fetchUserPrefs(uid).catch(() => DEFAULT_MOCK_PREFS) : DEFAULT_MOCK_PREFS
-        const scored = MOCK_MOVIES.map((m) => ({ ...m, ...computeReelScore(m, prefs) }))
+        const prefsWithTaste = { ...prefs, tasteProfile }
+        const scored = MOCK_MOVIES.map((m) => ({ ...m, ...computeReelScore(m, prefsWithTaste) }))
         scored.sort((a, b) => b.score - a.score)
         setMovies(scored)
       } finally {
         setLoading(false)
       }
     },
-    [userId]
+    [userId, tasteProfile]
   )
 
   useEffect(() => {
@@ -144,6 +148,7 @@ async function fetchUserPrefs(userId) {
     genrePreferences: genrePrefsRes.data?.length ? genrePrefsRes.data : DEFAULT_MOCK_PREFS.genrePreferences,
     peoplePreferences: peoplePrefsRes.data || [],
     scoringWeights: sw,
+    tasteMaxAdjustment: Number(user?.user_metadata?.taste_max_adjustment ?? 10),
   }
 }
 

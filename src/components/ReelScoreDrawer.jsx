@@ -1,6 +1,7 @@
 import { X, Star, Heart, AlertTriangle } from 'lucide-react'
 import BucketBadge from './BucketBadge'
 import StreamingBadges from './StreamingBadges'
+import RatingButtons from './RatingButtons'
 
 export default function ReelScoreDrawer({ movie, onClose }) {
   if (!movie) return null
@@ -56,6 +57,11 @@ export default function ReelScoreDrawer({ movie, onClose }) {
             >
               <X size={20} />
             </button>
+          </div>
+
+          {/* Rating */}
+          <div className="px-5 pb-4">
+            <RatingButtons movie={movie} />
           </div>
 
           {/* Synopsis */}

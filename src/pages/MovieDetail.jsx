@@ -1,24 +1,32 @@
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useMovies, useWatchlist } from '../hooks/useMovies'
 import { useRatings } from '../contexts/RatingsContext'
-import { ArrowLeft, Bookmark, BookmarkCheck, ExternalLink, ThumbsUp, ThumbsDown, Eye, MinusCircle } from 'lucide-react'
+import { getMovieDetails, posterUrl } from '../lib/tmdb'
+import { fetchOMDbRatings } from '../lib/omdb'
+import { computeReelScore } from '../lib/reelScore'
+import { ArrowLeft, Bookmark, BookmarkCheck, ExternalLink, ThumbsUp, ThumbsDown, Eye, MinusCircle, RefreshCw } from 'lucide-react'
 import BucketBadge from '../components/BucketBadge'
 import TabBar from '../components/TabBar'
 import StreamingBadges from '../components/StreamingBadges'
 import RatingButtons from '../components/RatingButtons'
 
 const RATING_BADGE = {
-  liked:          { label: 'You liked this', Icon: ThumbsUp,    color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20' },
-  disliked:       { label: 'You disliked this', Icon: ThumbsDown, color: 'text-red-400',   bg: 'bg-red-500/10 border-red-500/20' },
-  seen:           { label: 'You\'ve seen this', Icon: Eye,       color: 'text-accent',      bg: 'bg-accent/10 border-accent/20' },
-  not_interested: { label: 'Not for you',     Icon: MinusCircle, color: 'text-text-secondary', bg: 'bg-surface border-accent-secondary/20' },
+  liked:          { label: 'You liked this',   Icon: ThumbsUp,    color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20' },
+  disliked:       { label: 'You disliked this', Icon: ThumbsDown, color: 'text-red-400',      bg: 'bg-red-500/10 border-red-500/20' },
+  seen:           { label: "You've seen this",  Icon: Eye,         color: 'text-accent',       bg: 'bg-accent/10 border-accent/20' },
+  not_interested: { label: 'Not for you',       Icon: MinusCircle, color: 'text-text-secondary', bg: 'bg-surface border-accent-secondary/20' },
 }
 
-const SOURCE_LABELS = {
-  imdb: 'IMDb',
-  rt_critic: 'RT Critic',
-  letterboxd: 'Letterboxd',
+const SOURCE_LABELS = { imdb: 'IMDb', rt_critic: 'RT Critic', letterboxd: 'Letterboxd' }
+
+// Extract a numeric TMDB id from route params like "tmdb-12345" or "12345"
+function parseTmdbId(id) {
+  if (!id) return null
+  const s = String(id).replace(/^tmdb-/, '')
+  const n = Number(s)
+  return Number.isFinite(n) && n > 0 ? n : null
 }
 
 export default function MovieDetail() {
@@ -27,9 +35,72 @@ export default function MovieDetail() {
   const { user } = useAuth()
   const { movies } = useMovies(user?.id)
   const { addToWatchlist, removeFromWatchlist, isInWatchlist } = useWatchlist(user?.id)
-  const { getRating } = useRatings()
+  const { getRating, tasteProfile } = useRatings()
 
-  const movie = movies.find((m) => m.id === id || String(m.tmdb_id) === id)
+  const [fetchedMovie, setFetchedMovie] = useState(null)
+  const [fetchLoading, setFetchLoading] = useState(false)
+  const [fetchError, setFetchError] = useState(false)
+
+  // Try the preloaded list first
+  const preloaded = movies.find((m) => m.id === id || String(m.tmdb_id) === id)
+
+  const tmdbId = parseTmdbId(id)
+
+  // If not in the preloaded list, fetch directly from TMDB
+  useEffect(() => {
+    if (preloaded || !tmdbId) return
+    let cancelled = false
+    async function load() {
+      setFetchLoading(true)
+      setFetchError(false)
+      try {
+        const detail = await getMovieDetails(tmdbId)
+        const omdb = await fetchOMDbRatings(detail.imdb_id).catch(() => null)
+        const director = detail.credits?.crew?.find((c) => c.job === 'Director') || null
+        const cast = (detail.credits?.cast || []).slice(0, 10).map((c) => ({ id: c.id, name: c.name }))
+        const trailer = detail.videos?.results?.find((v) => v.type === 'Trailer' && v.site === 'YouTube')
+        const keywords = (detail.keywords?.keywords || []).map((k) => k.name)
+
+        const base = {
+          id: `tmdb-${detail.id}`,
+          tmdb_id: detail.id,
+          imdb_id: detail.imdb_id || null,
+          title: detail.title,
+          synopsis: detail.overview,
+          poster_path: detail.poster_path,
+          backdrop_path: detail.backdrop_path,
+          release_date: detail.release_date,
+          genres: (detail.genres || []).map((g) => ({ id: g.id, name: g.name })),
+          keywords,
+          cast,
+          director: director ? { id: director.id, name: director.name } : null,
+          trailer_url: trailer ? `https://www.youtube.com/watch?v=${trailer.key}` : null,
+          imdb_score: omdb?.imdb_score ?? null,
+          rt_critic: omdb?.rt_critic ?? null,
+          letterboxd_score: omdb?.letterboxd_score ?? null,
+        }
+        const scored = { ...base, ...computeReelScore(base, { tasteProfile }) }
+        if (!cancelled) setFetchedMovie(scored)
+      } catch {
+        if (!cancelled) setFetchError(true)
+      } finally {
+        if (!cancelled) setFetchLoading(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [tmdbId, preloaded])
+
+  // Loading state
+  if (fetchLoading || (!preloaded && !fetchedMovie && !fetchError && tmdbId)) {
+    return (
+      <div className="min-h-screen bg-bg flex items-center justify-center">
+        <RefreshCw size={24} className="text-accent animate-spin" />
+      </div>
+    )
+  }
+
+  const movie = preloaded || fetchedMovie
 
   if (!movie) {
     return (
@@ -68,7 +139,6 @@ export default function MovieDetail() {
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-bg via-bg/20 to-transparent" />
 
-        {/* Back button */}
         <button
           onClick={() => navigate(-1)}
           className="absolute top-4 left-4 p-2 rounded-full bg-black/40 text-white backdrop-blur-sm hover:bg-black/60 transition-colors"
@@ -76,7 +146,6 @@ export default function MovieDetail() {
           <ArrowLeft size={20} />
         </button>
 
-        {/* Watchlist button */}
         <button
           onClick={toggleWatchlist}
           className="absolute top-4 right-4 p-2 rounded-full bg-black/40 text-white backdrop-blur-sm hover:bg-black/60 transition-colors"
@@ -171,6 +240,16 @@ export default function MovieDetail() {
                 <span className="text-red-400 font-body text-sm font-semibold">−30</span>
               </div>
             )}
+            {!!breakdown?.tasteBonus && (
+              <div className="flex justify-between py-3 border-b border-accent-secondary/10">
+                <span className={breakdown.tasteBonus > 0 ? 'text-emerald-400 font-body text-sm' : 'text-red-400 font-body text-sm'}>
+                  Taste profile {breakdown.tasteBonus > 0 ? 'boost' : 'penalty'}
+                </span>
+                <span className={breakdown.tasteBonus > 0 ? 'text-emerald-400 font-body text-sm font-semibold' : 'text-red-400 font-body text-sm font-semibold'}>
+                  {breakdown.tasteBonus > 0 ? `+${breakdown.tasteBonus}` : breakdown.tasteBonus}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between py-3">
               <span className="text-text font-body text-sm font-semibold">ReelScore</span>
               <span className="text-accent font-heading font-bold text-base">{score}/100</span>
@@ -214,7 +293,7 @@ export default function MovieDetail() {
           </div>
         )}
 
-        {/* Streaming availability */}
+        {/* Streaming */}
         <div className="mb-6">
           <h2 className="font-heading font-semibold text-text text-lg mb-3">Where to Watch</h2>
           <div className="bg-surface rounded-2xl px-4 py-4">
@@ -222,14 +301,12 @@ export default function MovieDetail() {
           </div>
         </div>
 
-        {/* Release */}
         {release_date && (
           <p className="text-text-secondary font-body text-sm mb-4">
             Released: {new Date(release_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
           </p>
         )}
 
-        {/* Trailer */}
         {trailer_url && (
           <a
             href={trailer_url}

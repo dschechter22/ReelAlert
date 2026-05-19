@@ -14,16 +14,18 @@ const PROXY_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/theaters-s
  * Fetch theaters and showtimes near a zip code for a given date.
  *
  * @param {string} zip
- * @param {string} date  YYYY-MM-DD
+ * @param {string} date   YYYY-MM-DD
+ * @param {string} [movie]  optional movie title — narrows results to that film
  * @returns {Promise<Theater[]>}
  */
-export async function getTheatersNearZip(zip, date) {
+export async function getTheatersNearZip(zip, date, movie) {
   const { data: { session } } = await supabase.auth.getSession()
   const token = session?.access_token ?? SUPABASE_ANON_KEY
 
   const url = new URL(PROXY_BASE)
   url.searchParams.set('zip', zip.trim())
   url.searchParams.set('date', date)
+  if (movie?.trim()) url.searchParams.set('movie', movie.trim())
 
   const res = await fetch(url.toString(), {
     headers: {

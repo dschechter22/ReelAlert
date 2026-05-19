@@ -66,14 +66,15 @@ function parseDistance(raw: string | undefined): number | undefined {
 
 // ── SerpAPI call ──────────────────────────────────────────────────────────────
 
-async function fetchSerpShowtimes(zip: string, date: string, apiKey: string): Promise<Theater[]> {
+async function fetchSerpShowtimes(zip: string, date: string, apiKey: string, movie?: string): Promise<Theater[]> {
+  const q = movie ? `${movie} showtimes near ${zip}` : `movies near ${zip}`
   const params = new URLSearchParams({
-    engine:  'google',
-    q:       `movies near ${zip}`,
+    engine:   'google',
+    q,
     location: zip,
-    hl:      'en',
-    gl:      'us',
-    api_key: apiKey,
+    hl:       'en',
+    gl:       'us',
+    api_key:  apiKey,
   })
 
   const res = await fetch(`https://serpapi.com/search.json?${params}`)
@@ -244,9 +245,10 @@ Deno.serve(async (req: Request) => {
     })
   }
 
-  const url  = new URL(req.url)
-  const zip  = url.searchParams.get('zip')?.trim()
-  const date = url.searchParams.get('date') ?? new Date().toISOString().split('T')[0]
+  const url   = new URL(req.url)
+  const zip   = url.searchParams.get('zip')?.trim()
+  const date  = url.searchParams.get('date') ?? new Date().toISOString().split('T')[0]
+  const movie = url.searchParams.get('movie')?.trim() || undefined
 
   if (!zip) {
     return new Response(JSON.stringify({ error: 'zip param is required' }), {
@@ -256,7 +258,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const theaters = await fetchSerpShowtimes(zip, date, SERPAPI_KEY)
+    const theaters = await fetchSerpShowtimes(zip, date, SERPAPI_KEY, movie)
     theaters.sort((a, b) => (a.distance ?? 999) - (b.distance ?? 999))
 
     return new Response(JSON.stringify({ theaters }), {

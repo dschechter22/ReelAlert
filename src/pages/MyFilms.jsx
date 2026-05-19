@@ -63,8 +63,15 @@ export default function MyFilms() {
         style={{ background: 'rgb(var(--color-bg) / 0.9)', backdropFilter: 'blur(12px)' }}
       >
         <div className="max-w-2xl mx-auto">
-          <div className="py-4">
+          <div className="py-4 flex items-center justify-between">
             <h1 className="font-heading font-bold text-text text-xl">My Films</h1>
+            <button
+              onClick={() => navigate('/stats')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface border border-accent-secondary/20 hover:border-accent/40 transition-colors"
+            >
+              <BarChart3 size={15} className="text-accent" />
+              <span className="text-xs font-body font-medium text-text">Stats</span>
+            </button>
           </div>
 
           {/* Segment tabs */}

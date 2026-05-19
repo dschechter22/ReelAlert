@@ -52,7 +52,9 @@ function nextSevenDays() {
 
 export default function Theaters() {
   const [inputZip, setInputZip] = useState('')
+  const [inputMovie, setInputMovie] = useState('')
   const [searchedZip, setSearchedZip] = useState('')
+  const [searchedMovie, setSearchedMovie] = useState('')
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
   const [chainFilter, setChainFilter] = useState('all')
   const [showFilters, setShowFilters] = useState(false)
@@ -81,15 +83,21 @@ export default function Theaters() {
     return acc
   }, {})
 
-  const search = useCallback(async (zip, date) => {
+  const search = useCallback(async (zip, date, movie) => {
     if (!zip?.trim()) return
     setLoading(true)
     setError(null)
     setAllTheaters([])
     setSelectedTheater(null)
     try {
-      const results = await getTheatersNearZip(zip.trim(), date)
-      if (!results.length) throw new Error(`No theaters found near ${zip}. Try a different zip code.`)
+      const results = await getTheatersNearZip(zip.trim(), date, movie)
+      if (!results.length) {
+        throw new Error(
+          movie
+            ? `No showtimes found for "${movie}" near ${zip}.`
+            : `No theaters found near ${zip}. Try a different zip code.`
+        )
+      }
       setAllTheaters(results)
       setSelectedTheater(results[0])
     } catch (err) {
@@ -102,12 +110,13 @@ export default function Theaters() {
   function handleSearch(e) {
     e.preventDefault()
     setSearchedZip(inputZip)
-    search(inputZip, selectedDate)
+    setSearchedMovie(inputMovie)
+    search(inputZip, selectedDate, inputMovie)
   }
 
   function handleDateChange(date) {
     setSelectedDate(date)
-    if (searchedZip) search(searchedZip, date)
+    if (searchedZip) search(searchedZip, date, searchedMovie)
   }
 
   const showtimes = selectedTheater?.showtimes ?? []
@@ -138,27 +147,39 @@ export default function Theaters() {
             )}
           </div>
 
-          {/* Search bar */}
-          <form onSubmit={handleSearch} className="flex gap-2">
-            <div className="relative flex-1">
+          {/* Search form */}
+          <form onSubmit={handleSearch} className="space-y-2">
+            <div className="relative">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
               <input
                 type="text"
-                inputMode="numeric"
-                value={inputZip}
-                onChange={(e) => setInputZip(e.target.value)}
-                placeholder="Enter zip code…"
+                value={inputMovie}
+                onChange={(e) => setInputMovie(e.target.value)}
+                placeholder="Movie title (optional)…"
                 className="w-full bg-surface border border-accent-secondary/20 rounded-xl pl-9 pr-4 py-2.5 text-sm text-text font-body placeholder-text-secondary focus:outline-none focus:border-accent/40"
               />
             </div>
-            <button
-              type="submit"
-              disabled={loading || !inputZip.trim()}
-              className="px-4 py-2.5 bg-accent text-white text-sm font-body font-medium rounded-xl disabled:opacity-40 hover:bg-accent/90 transition-colors flex items-center gap-1.5"
-            >
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <MapPin size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={inputZip}
+                  onChange={(e) => setInputZip(e.target.value)}
+                  placeholder="Zip code…"
+                  className="w-full bg-surface border border-accent-secondary/20 rounded-xl pl-9 pr-4 py-2.5 text-sm text-text font-body placeholder-text-secondary focus:outline-none focus:border-accent/40"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading || !inputZip.trim()}
+                className="px-4 py-2.5 bg-accent text-white text-sm font-body font-medium rounded-xl disabled:opacity-40 hover:bg-accent/90 transition-colors flex items-center gap-1.5"
+              >
               {loading && <RefreshCw size={14} className="animate-spin" />}
               Search
-            </button>
+              </button>
+            </div>
           </form>
 
           {/* Date chips — shown after first search */}
@@ -220,10 +241,11 @@ export default function Theaters() {
 
         {/* Empty state */}
         {!allTheaters.length && !loading && !error && (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <MapPin size={32} className="text-text-secondary/40 mb-3" />
-            <p className="font-body text-text-secondary text-sm">
-              Enter your zip code to find theaters from all major chains.
+          <div className="flex flex-col items-center justify-center py-20 text-center gap-2">
+            <MapPin size={32} className="text-text-secondary/40 mb-1" />
+            <p className="font-body text-text font-medium text-sm">Find showtimes near you</p>
+            <p className="font-body text-text-secondary text-sm max-w-xs">
+              Enter a movie title + zip to find where it's playing, or just a zip to browse all nearby theaters.
             </p>
           </div>
         )}
@@ -233,7 +255,9 @@ export default function Theaters() {
           <div className="flex flex-col items-center justify-center py-20">
             <RefreshCw size={24} className="text-accent animate-spin mb-3" />
             <p className="font-body text-text-secondary text-sm">
-              Finding theaters within {radius} miles of {inputZip}…
+              {searchedMovie
+                ? `Finding "${searchedMovie}" near ${inputZip}…`
+                : `Finding theaters near ${inputZip}…`}
             </p>
           </div>
         )}
@@ -254,9 +278,11 @@ export default function Theaters() {
         {/* Theater list + showtimes */}
         {theaters.length > 0 && !loading && (
           <>
-            {/* Theater count summary */}
+            {/* Results summary */}
             <p className="text-xs font-body text-text-secondary mb-3">
-              {allTheaters.length} theater{allTheaters.length !== 1 ? 's' : ''} near {searchedZip}
+              {searchedMovie
+                ? `"${searchedMovie}" showing at ${allTheaters.length} theater${allTheaters.length !== 1 ? 's' : ''} near ${searchedZip}`
+                : `${allTheaters.length} theater${allTheaters.length !== 1 ? 's' : ''} near ${searchedZip}`}
               {chainFilter !== 'all' && ` · ${CHAIN_MAP[chainFilter]?.label ?? chainFilter} only`}
             </p>
 

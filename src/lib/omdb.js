@@ -1,46 +1,33 @@
-const OMDB_API_KEY = import.meta.env.VITE_OMDB_API_KEY
-const OMDB_BASE = 'https://www.omdbapi.com'
-const LETTERBOXD_API = '/api/letterboxd'
+import { supabase } from './supabase'
+
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+const PROXY_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/omdb-proxy`
 
 // In-memory cache so the same movie isn't fetched twice per session
 const _cache = new Map()
 
-async function fetchLetterboxdScore(imdbId) {
-  try {
-    const res = await fetch(`${LETTERBOXD_API}?imdb_id=${imdbId}`)
-    if (!res.ok) return null
-    const data = await res.json()
-    return Number.isFinite(data.letterboxd_score) ? data.letterboxd_score : null
-  } catch {
-    return null
-  }
-}
-
 export async function fetchOMDbRatings(imdbId) {
   if (!imdbId) return null
   if (_cache.has(imdbId)) return _cache.get(imdbId)
-  if (!OMDB_API_KEY) return null
 
   try {
-    const url = new URL(OMDB_BASE)
-    url.searchParams.set('i', imdbId)
-    url.searchParams.set('apikey', OMDB_API_KEY)
+    const { data: { session } } = await supabase.auth.getSession()
+    const token = session?.access_token ?? SUPABASE_ANON_KEY
 
-    const [omdbRes, letterboxd_score] = await Promise.all([
-      fetch(url.toString()).then((r) => r.json()).catch(() => null),
-      fetchLetterboxdScore(imdbId),
-    ])
+    const res = await fetch(`${PROXY_BASE}?imdb_id=${imdbId}`, {
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${token}`,
+      },
+    })
 
-    if (!omdbRes || omdbRes.Response === 'False') return null
-
-    const rtEntry = (omdbRes.Ratings || []).find((r) => r.Source === 'Rotten Tomatoes')
-    const imdbParsed = omdbRes.imdbRating && omdbRes.imdbRating !== 'N/A' ? parseFloat(omdbRes.imdbRating) : null
-    const rtParsed = rtEntry ? parseInt(rtEntry.Value.replace('%', ''), 10) : null
+    if (!res.ok) return null
+    const data = await res.json()
 
     const result = {
-      imdb_score: Number.isFinite(imdbParsed) ? imdbParsed : null,
-      rt_critic: Number.isFinite(rtParsed) ? rtParsed : null,
-      letterboxd_score,
+      imdb_score: Number.isFinite(data.imdb_score) ? data.imdb_score : null,
+      rt_critic: Number.isFinite(data.rt_critic) ? data.rt_critic : null,
+      letterboxd_score: Number.isFinite(data.letterboxd_score) ? data.letterboxd_score : null,
     }
     _cache.set(imdbId, result)
     return result

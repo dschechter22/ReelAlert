@@ -8,7 +8,7 @@ export default async function handler(req, res) {
   const { imdb_id } = req.query
   if (!imdb_id) return res.status(400).json({ error: 'Missing imdb_id' })
 
-  const OMDB_API_KEY = process.env.OMDB_API_KEY
+  const OMDB_API_KEY = process.env.OMDB_API_KEY || process.env.VITE_OMDB_API_KEY
   if (!OMDB_API_KEY) {
     return res.status(503).json({ error: 'OMDB_API_KEY not configured' })
   }

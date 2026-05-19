@@ -7,7 +7,11 @@ export async function fetchOMDbRatings(imdbId) {
 
   try {
     const res = await fetch(`/api/omdb?imdb_id=${imdbId}`)
-    if (!res.ok) return null
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      console.error(`[omdb] ${res.status} for ${imdbId}:`, body.error ?? res.statusText)
+      return null
+    }
     const data = await res.json()
 
     const result = {
@@ -17,7 +21,8 @@ export async function fetchOMDbRatings(imdbId) {
     }
     _cache.set(imdbId, result)
     return result
-  } catch {
+  } catch (err) {
+    console.error(`[omdb] fetch failed for ${imdbId}:`, err.message)
     return null
   }
 }

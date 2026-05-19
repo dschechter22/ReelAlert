@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Sparkles, RefreshCw, Shuffle, EyeOff, Search, X, SlidersHorizontal } from 'lucide-react'
+import { Sparkles, RefreshCw, Shuffle, EyeOff, Search, X, SlidersHorizontal, BookmarkPlus, Bookmark } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useRatings } from '../contexts/RatingsContext'
 import { supabase } from '../lib/supabase'
@@ -93,6 +93,39 @@ function pickRandomPages(count = 3) {
     .slice(0, count)
 }
 
+const FILTERS_KEY = 'ra-suggestions-filters'
+const PRESETS_KEY = 'ra-filter-presets'
+
+function loadSavedFilters() {
+  try { return JSON.parse(localStorage.getItem(FILTERS_KEY) || '{}') } catch { return {} }
+}
+
+function loadSavedPresets() {
+  try { return JSON.parse(localStorage.getItem(PRESETS_KEY) || '[]') } catch { return [] }
+}
+
+function FilterChip({ label, state, onClick }) {
+  const isInclude = state === 'include'
+  const isExclude = state === 'exclude'
+  return (
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-body font-medium border transition-colors ${
+        isInclude
+          ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+          : isExclude
+          ? 'bg-red-500/15 text-red-400 border-red-500/30'
+          : 'bg-bg text-text-secondary border-accent-secondary/20 hover:border-accent/40'
+      }`}
+    >
+      <span className="inline-block w-2.5 text-center shrink-0 mr-0.5">
+        {isInclude ? '+' : isExclude ? '−' : ''}
+      </span>
+      {label}
+    </button>
+  )
+}
+
 // Collect movie IDs from a person's filmography.
 // Directors: only movies where job === 'Director' (excludes EP, Producer, etc.)
 // Others: acting credits.
@@ -128,14 +161,19 @@ export default function Suggestions() {
   const [favoritePeople, setFavoritePeople] = useState([])
   const [userPrefs, setUserPrefs] = useState(null)
 
-  // Filter panel
+  // Filter panel — persisted to localStorage
   const [filterOpen, setFilterOpen] = useState(false)
-  const [yearFilter, setYearFilter] = useState({}) // { [decade]: 'include' | 'exclude' }
-  const [genreFilter, setGenreFilter] = useState({}) // { [genreId]: 'include' | 'exclude' }
-  const [countryFilter, setCountryFilter] = useState({}) // { [code]: 'include' | 'exclude' }
-  const [certFilter, setCertFilter] = useState({}) // { [cert]: 'include' | 'exclude' }
-  const [streamingServices, setStreamingServices] = useState([])
-  const [streamingOnly, setStreamingOnly] = useState(false)
+  const [yearFilter, setYearFilter] = useState(() => loadSavedFilters().yearFilter ?? {})
+  const [genreFilter, setGenreFilter] = useState(() => loadSavedFilters().genreFilter ?? {})
+  const [countryFilter, setCountryFilter] = useState(() => loadSavedFilters().countryFilter ?? {})
+  const [certFilter, setCertFilter] = useState(() => loadSavedFilters().certFilter ?? {})
+  const [streamingServices, setStreamingServices] = useState(() => loadSavedFilters().streamingServices ?? [])
+  const [streamingOnly, setStreamingOnly] = useState(() => loadSavedFilters().streamingOnly ?? false)
+
+  // Saved presets
+  const [savedPresets, setSavedPresets] = useState(loadSavedPresets)
+  const [presetName, setPresetName] = useState('')
+  const [savingPreset, setSavingPreset] = useState(false)
 
   // People search
   const [peopleQuery, setPeopleQuery] = useState('')
@@ -170,6 +208,15 @@ export default function Suggestions() {
     }
     init()
   }, [user])
+
+  // Persist filters to localStorage whenever they change
+  useEffect(() => {
+    try {
+      localStorage.setItem(FILTERS_KEY, JSON.stringify({
+        yearFilter, genreFilter, countryFilter, certFilter, streamingServices, streamingOnly,
+      }))
+    } catch {}
+  }, [yearFilter, genreFilter, countryFilter, certFilter, streamingServices, streamingOnly])
 
   // Debounced people search
   useEffect(() => {
@@ -518,6 +565,35 @@ export default function Suggestions() {
     })
   }
 
+  function savePreset() {
+    if (!presetName.trim()) return
+    const preset = {
+      id: Date.now(),
+      name: presetName.trim(),
+      yearFilter, genreFilter, countryFilter, certFilter, streamingServices, streamingOnly,
+    }
+    const updated = [...savedPresets, preset]
+    setSavedPresets(updated)
+    try { localStorage.setItem(PRESETS_KEY, JSON.stringify(updated)) } catch {}
+    setPresetName('')
+    setSavingPreset(false)
+  }
+
+  function applyPreset(preset) {
+    setYearFilter(preset.yearFilter || {})
+    setGenreFilter(preset.genreFilter || {})
+    setCountryFilter(preset.countryFilter || {})
+    setCertFilter(preset.certFilter || {})
+    setStreamingServices(preset.streamingServices || [])
+    setStreamingOnly(preset.streamingOnly || false)
+  }
+
+  function deletePreset(id) {
+    const updated = savedPresets.filter((p) => p.id !== id)
+    setSavedPresets(updated)
+    try { localStorage.setItem(PRESETS_KEY, JSON.stringify(updated)) } catch {}
+  }
+
   function cycleGenre(genreId) {
     setGenreFilter((prev) => {
       const current = prev[genreId]
@@ -663,30 +739,65 @@ export default function Suggestions() {
           {/* Collapsible filter panel */}
           {filterOpen && (
             <div className="mb-3 rounded-2xl bg-surface border border-accent-secondary/15 p-4 space-y-4">
+
+              {/* Presets */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-text-secondary text-xs font-body font-medium uppercase tracking-wide">Presets</p>
+                  <button
+                    onClick={() => setSavingPreset((v) => !v)}
+                    className="flex items-center gap-1 text-xs font-body text-accent hover:opacity-80 transition-opacity"
+                  >
+                    <BookmarkPlus size={13} />
+                    Save current
+                  </button>
+                </div>
+                {savingPreset && (
+                  <div className="flex gap-2 mb-2">
+                    <input
+                      autoFocus
+                      type="text"
+                      value={presetName}
+                      onChange={(e) => setPresetName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') savePreset(); if (e.key === 'Escape') setSavingPreset(false) }}
+                      placeholder="Preset name…"
+                      className="flex-1 bg-bg border border-accent-secondary/20 rounded-xl px-3 py-1.5 text-xs text-text font-body placeholder-text-secondary focus:outline-none focus:border-accent/40"
+                    />
+                    <button
+                      onClick={savePreset}
+                      disabled={!presetName.trim()}
+                      className="px-3 py-1.5 rounded-xl bg-accent text-white text-xs font-body font-medium disabled:opacity-40"
+                    >
+                      Save
+                    </button>
+                  </div>
+                )}
+                {savedPresets.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {savedPresets.map((p) => (
+                      <span key={p.id} className="inline-flex items-center gap-1 pl-3 pr-1.5 py-1.5 rounded-full text-xs font-body font-medium bg-accent/10 text-accent border border-accent/20">
+                        <Bookmark size={10} className="shrink-0" />
+                        <button onClick={() => applyPreset(p)} className="hover:underline">{p.name}</button>
+                        <button onClick={() => deletePreset(p.id)} className="ml-0.5 hover:opacity-70">
+                          <X size={10} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  !savingPreset && <p className="text-text-secondary/50 text-xs font-body">No saved presets yet.</p>
+                )}
+              </div>
+
+              <div className="border-t border-accent-secondary/10" />
+
               {/* Release Year */}
               <div>
                 <p className="text-text-secondary text-xs font-body font-medium uppercase tracking-wide mb-2">Release Year</p>
                 <div className="flex flex-wrap gap-2">
-                  {YEAR_PRESETS.map((p) => {
-                    const state = yearFilter[p.value]
-                    const isInclude = state === 'include'
-                    const isExclude = state === 'exclude'
-                    return (
-                      <button
-                        key={p.value}
-                        onClick={() => cycleYearFilter(p.value)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-body font-medium border transition-colors ${
-                          isInclude
-                            ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                            : isExclude
-                            ? 'bg-red-500/15 text-red-400 border-red-500/30'
-                            : 'bg-bg text-text-secondary border-accent-secondary/20 hover:border-accent/40'
-                        }`}
-                      >
-                        {isInclude ? '+ ' : isExclude ? '− ' : ''}{p.label}
-                      </button>
-                    )
-                  })}
+                  {YEAR_PRESETS.map((p) => (
+                    <FilterChip key={p.value} label={p.label} state={yearFilter[p.value]} onClick={() => cycleYearFilter(p.value)} />
+                  ))}
                 </div>
               </div>
 
@@ -694,26 +805,9 @@ export default function Suggestions() {
               <div>
                 <p className="text-text-secondary text-xs font-body font-medium uppercase tracking-wide mb-2">Genres</p>
                 <div className="flex flex-wrap gap-2">
-                  {TMDB_GENRES.map((g) => {
-                    const state = genreFilter[g.id]
-                    const isInclude = state === 'include'
-                    const isExclude = state === 'exclude'
-                    return (
-                      <button
-                        key={g.id}
-                        onClick={() => cycleGenre(g.id)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-body font-medium border transition-colors ${
-                          isInclude
-                            ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                            : isExclude
-                            ? 'bg-red-500/15 text-red-400 border-red-500/30'
-                            : 'bg-bg text-text-secondary border-accent-secondary/20 hover:border-accent/40'
-                        }`}
-                      >
-                        {isInclude ? '+' : isExclude ? '−' : ''}{isInclude || isExclude ? ' ' : ''}{g.name}
-                      </button>
-                    )
-                  })}
+                  {TMDB_GENRES.map((g) => (
+                    <FilterChip key={g.id} label={g.name} state={genreFilter[g.id]} onClick={() => cycleGenre(g.id)} />
+                  ))}
                 </div>
               </div>
 
@@ -721,26 +815,9 @@ export default function Suggestions() {
               <div>
                 <p className="text-text-secondary text-xs font-body font-medium uppercase tracking-wide mb-2">Country of Origin</p>
                 <div className="flex flex-wrap gap-2">
-                  {ORIGIN_COUNTRIES.map((c) => {
-                    const state = countryFilter[c.code]
-                    const isInclude = state === 'include'
-                    const isExclude = state === 'exclude'
-                    return (
-                      <button
-                        key={c.code}
-                        onClick={() => cycleCountry(c.code)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-body font-medium border transition-colors ${
-                          isInclude
-                            ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                            : isExclude
-                            ? 'bg-red-500/15 text-red-400 border-red-500/30'
-                            : 'bg-bg text-text-secondary border-accent-secondary/20 hover:border-accent/40'
-                        }`}
-                      >
-                        {isInclude ? '+ ' : isExclude ? '− ' : ''}{c.label}
-                      </button>
-                    )
-                  })}
+                  {ORIGIN_COUNTRIES.map((c) => (
+                    <FilterChip key={c.code} label={c.label} state={countryFilter[c.code]} onClick={() => cycleCountry(c.code)} />
+                  ))}
                 </div>
               </div>
 
@@ -748,26 +825,9 @@ export default function Suggestions() {
               <div>
                 <p className="text-text-secondary text-xs font-body font-medium uppercase tracking-wide mb-2">Rating</p>
                 <div className="flex flex-wrap gap-2">
-                  {CERTIFICATIONS.map((cert) => {
-                    const state = certFilter[cert]
-                    const isInclude = state === 'include'
-                    const isExclude = state === 'exclude'
-                    return (
-                      <button
-                        key={cert}
-                        onClick={() => cycleCert(cert)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-body font-medium border transition-colors ${
-                          isInclude
-                            ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                            : isExclude
-                            ? 'bg-red-500/15 text-red-400 border-red-500/30'
-                            : 'bg-bg text-text-secondary border-accent-secondary/20 hover:border-accent/40'
-                        }`}
-                      >
-                        {isInclude ? '+ ' : isExclude ? '− ' : ''}{cert}
-                      </button>
-                    )
-                  })}
+                  {CERTIFICATIONS.map((cert) => (
+                    <FilterChip key={cert} label={cert} state={certFilter[cert]} onClick={() => cycleCert(cert)} />
+                  ))}
                 </div>
               </div>
 

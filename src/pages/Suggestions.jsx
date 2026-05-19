@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Sparkles, RefreshCw, Shuffle, EyeOff, Search, X } from 'lucide-react'
+import { Sparkles, RefreshCw, Shuffle, EyeOff, Search, X, SlidersHorizontal } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useRatings } from '../contexts/RatingsContext'
 import { supabase } from '../lib/supabase'
-import { discoverMovies, getMovieDetails, getPersonDetails, searchPeople } from '../lib/tmdb'
+import { discoverMovies, getMovieDetails, getPersonDetails, searchPeople, getWatchProviders, TMDB_GENRES } from '../lib/tmdb'
 import { computeReelScore, DEFAULT_SCORING_WEIGHTS } from '../lib/reelScore'
 import { fetchOMDbRatings } from '../lib/omdb'
 import { DEFAULT_MOCK_PREFS } from '../lib/mockData'
@@ -18,6 +18,37 @@ const BUCKET_FILTERS = [
   { value: 'worth-watching', label: 'Worth Watching' },
   { value: 'if-youre-interested', label: "If You're Interested" },
 ]
+
+const YEAR_PRESETS = [
+  { value: 'all', label: 'All' },
+  { value: '2020s', label: '2020s' },
+  { value: '2010s', label: '2010s' },
+  { value: '2000s', label: '2000s' },
+  { value: 'classics', label: 'Classics' },
+]
+
+const STREAMING_SERVICES = [
+  { id: 8,    name: 'Netflix' },
+  { id: 9,    name: 'Prime Video' },
+  { id: 337,  name: 'Disney+' },
+  { id: 1899, name: 'Max' },
+  { id: 15,   name: 'Hulu' },
+  { id: 350,  name: 'Apple TV+' },
+  { id: 386,  name: 'Peacock' },
+  { id: 531,  name: 'Paramount+' },
+]
+
+const CURRENT_YEAR = new Date().getFullYear()
+
+function yearPresetToRange(preset) {
+  switch (preset) {
+    case '2020s': return { yearFrom: 2020, yearTo: CURRENT_YEAR }
+    case '2010s': return { yearFrom: 2010, yearTo: 2019 }
+    case '2000s': return { yearFrom: 2000, yearTo: 2009 }
+    case 'classics': return { yearFrom: null, yearTo: 1999 }
+    default: return { yearFrom: null, yearTo: null }
+  }
+}
 
 function getTopGenreIds(tasteProfile, limit = 6) {
   if (!tasteProfile?.genre_affinities) return []
@@ -69,6 +100,13 @@ export default function Suggestions() {
   const [favoritePeople, setFavoritePeople] = useState([])
   const [userPrefs, setUserPrefs] = useState(null)
 
+  // Filter panel
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [yearPreset, setYearPreset] = useState('all')
+  const [genreFilter, setGenreFilter] = useState({}) // { [genreId]: 'include' | 'exclude' }
+  const [streamingServices, setStreamingServices] = useState([])
+  const [streamingOnly, setStreamingOnly] = useState(false)
+
   // People search
   const [peopleQuery, setPeopleQuery] = useState('')
   const [peopleResults, setPeopleResults] = useState([])
@@ -119,11 +157,18 @@ export default function Suggestions() {
   }, [peopleQuery])
 
   // Core fetch — uses filmography when people are selected, discover otherwise
-  const fetchMovies = useCallback(async (currentPages, prefs, tasteProf, people) => {
+  const fetchMovies = useCallback(async (currentPages, prefs, tasteProf, people, filters) => {
     if (!prefs) return
     setLoading(true)
+    const { yearPreset: yp, genreFilter: gf, streamingServices: ss, streamingOnly: so } = filters || {}
+    const { yearFrom, yearTo } = yearPresetToRange(yp || 'all')
+    const includeGenres = Object.entries(gf || {}).filter(([, v]) => v === 'include').map(([id]) => Number(id))
+    const excludeGenres = Object.entries(gf || {}).filter(([, v]) => v === 'exclude').map(([id]) => Number(id))
+    const watchProviders = ss || []
+    const useStreamingFilter = so || watchProviders.length > 0
+
     try {
-      let movieIds = []
+      let rawList = [] // array of movie objects (either stubs or full details later)
 
       if (people.length > 0) {
         // Filmography-based: bypasses genre filter entirely so directors show correctly
@@ -134,40 +179,60 @@ export default function Suggestions() {
         const idSet = new Set(
           filmographyResults.flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
         )
-        movieIds = [...idSet].slice(0, 30)
-      } else {
-        // Personalized discover by taste genres
-        const mustSeeIds = (prefs.genrePreferences || [])
-          .filter((g) => g.priority === 'must_see')
-          .map((g) => g.genre_id)
-        const tasteGenreIds = getTopGenreIds(tasteProf)
-        const genreIds = [...new Set([...mustSeeIds, ...tasteGenreIds])]
+        let movieIds = [...idSet].slice(0, 60)
 
-        const fetches = await Promise.allSettled(
-          currentPages.map((page) => discoverMovies({ genreIds, page, minVotes: 100 }))
-        )
-        const results = fetches
+        // Fetch full details for client-side filtering
+        const detailResults = await Promise.allSettled(movieIds.map((id) => getMovieDetails(id)))
+        let detailList = detailResults
           .filter((r) => r.status === 'fulfilled')
-          .flatMap((r) => r.value?.results || [])
-        const seen = new Set()
-        movieIds = results
-          .filter((m) => { if (seen.has(m.id)) return false; seen.add(m.id); return true })
-          .slice(0, 20)
-          .map((m) => m.id)
-      }
+          .map((r) => r.value)
 
-      // Fetch full details + OMDb
-      const details = await Promise.allSettled(movieIds.map((id) => getMovieDetails(id)))
-      const omdbResults = await Promise.allSettled(
-        details.map((d) =>
-          d.status === 'fulfilled' ? fetchOMDbRatings(d.value.imdb_id) : Promise.resolve(null)
+        // Client-side year filter
+        if (yearFrom || yearTo) {
+          detailList = detailList.filter((m) => {
+            const y = m.release_date ? new Date(m.release_date).getFullYear() : null
+            if (!y) return false
+            if (yearFrom && y < yearFrom) return false
+            if (yearTo && y > yearTo) return false
+            return true
+          })
+        }
+
+        // Client-side genre filter
+        if (includeGenres.length > 0) {
+          detailList = detailList.filter((m) =>
+            (m.genres || []).some((g) => includeGenres.includes(g.id))
+          )
+        }
+        if (excludeGenres.length > 0) {
+          detailList = detailList.filter((m) =>
+            !(m.genres || []).some((g) => excludeGenres.includes(g.id))
+          )
+        }
+
+        // Client-side streaming filter
+        if (useStreamingFilter) {
+          const providerResults = await Promise.allSettled(
+            detailList.map((m) => getWatchProviders(m.id))
+          )
+          detailList = detailList.filter((_, i) => {
+            const prov = providerResults[i].status === 'fulfilled' ? providerResults[i].value : null
+            if (!prov) return false
+            const flatrate = prov.flatrate || []
+            if (watchProviders.length > 0) {
+              return flatrate.some((p) => watchProviders.includes(p.provider_id))
+            }
+            // streamingOnly with no specific services — any flatrate
+            return flatrate.length > 0
+          })
+        }
+
+        rawList = detailList.slice(0, 30)
+        // Fetch OMDb for this list
+        const omdbResults = await Promise.allSettled(
+          rawList.map((d) => fetchOMDbRatings(d.imdb_id))
         )
-      )
-
-      const enriched = details
-        .map((res, i) => {
-          if (res.status !== 'fulfilled') return null
-          const detail = res.value
+        const enriched = rawList.map((detail, i) => {
           const omdb = omdbResults[i].status === 'fulfilled' ? omdbResults[i].value : null
           const director = detail.credits?.crew?.find((c) => c.job === 'Director') || null
           const cast = (detail.credits?.cast || []).slice(0, 10).map((c) => ({ id: c.id, name: c.name }))
@@ -189,9 +254,75 @@ export default function Suggestions() {
             letterboxd_score: omdb?.letterboxd_score ?? null,
           }
         })
-        .filter(Boolean)
+        setRawMovies(enriched)
+      } else {
+        // Personalized discover by taste genres
+        const mustSeeIds = (prefs.genrePreferences || [])
+          .filter((g) => g.priority === 'must_see')
+          .map((g) => g.genre_id)
+        const tasteGenreIds = getTopGenreIds(tasteProf)
+        // Use explicit include genres if set, otherwise fall back to taste genres
+        const genreIds = includeGenres.length > 0
+          ? includeGenres
+          : [...new Set([...mustSeeIds, ...tasteGenreIds])]
 
-      setRawMovies(enriched)
+        const fetches = await Promise.allSettled(
+          currentPages.map((page) => discoverMovies({
+            genreIds,
+            excludeGenreIds: excludeGenres,
+            page,
+            minVotes: 100,
+            watchProviders: useStreamingFilter ? (watchProviders.length > 0 ? watchProviders : []) : [],
+            yearFrom,
+            yearTo,
+          }))
+        )
+        const results = fetches
+          .filter((r) => r.status === 'fulfilled')
+          .flatMap((r) => r.value?.results || [])
+        const seen = new Set()
+        const movieIds = results
+          .filter((m) => { if (seen.has(m.id)) return false; seen.add(m.id); return true })
+          .slice(0, 20)
+          .map((m) => m.id)
+
+        // Fetch full details + OMDb
+        const details = await Promise.allSettled(movieIds.map((id) => getMovieDetails(id)))
+        const omdbResults = await Promise.allSettled(
+          details.map((d) =>
+            d.status === 'fulfilled' ? fetchOMDbRatings(d.value.imdb_id) : Promise.resolve(null)
+          )
+        )
+
+        const enriched = details
+          .map((res, i) => {
+            if (res.status !== 'fulfilled') return null
+            const detail = res.value
+            const omdb = omdbResults[i].status === 'fulfilled' ? omdbResults[i].value : null
+            const director = detail.credits?.crew?.find((c) => c.job === 'Director') || null
+            const cast = (detail.credits?.cast || []).slice(0, 10).map((c) => ({ id: c.id, name: c.name }))
+            const keywords = (detail.keywords?.keywords || []).map((k) => k.name)
+            return {
+              id: `tmdb-${detail.id}`,
+              tmdb_id: detail.id,
+              imdb_id: detail.imdb_id || null,
+              title: detail.title,
+              synopsis: detail.overview,
+              poster_path: detail.poster_path,
+              release_date: detail.release_date,
+              genres: (detail.genres || []).map((g) => ({ id: g.id, name: g.name })),
+              keywords,
+              cast,
+              director: director ? { id: director.id, name: director.name } : null,
+              imdb_score: omdb?.imdb_score ?? null,
+              rt_critic: omdb?.rt_critic ?? null,
+              letterboxd_score: omdb?.letterboxd_score ?? null,
+            }
+          })
+          .filter(Boolean)
+
+        setRawMovies(enriched)
+      }
     } catch (err) {
       console.warn('Suggestions fetch failed:', err.message)
       setRawMovies([])
@@ -200,10 +331,10 @@ export default function Suggestions() {
     }
   }, [])
 
-  // Re-fetch when pages, people, or prefs change (not on tasteProfile — rescoring is in-memory)
+  // Re-fetch when pages, people, prefs, or filters change (not on tasteProfile — rescoring is in-memory)
   useEffect(() => {
-    if (userPrefs) fetchMovies(pages, userPrefs, tasteProfile, selectedPeople)
-  }, [pages, selectedPeople, userPrefs])
+    if (userPrefs) fetchMovies(pages, userPrefs, tasteProfile, selectedPeople, { yearPreset, genreFilter, streamingServices, streamingOnly })
+  }, [pages, selectedPeople, userPrefs, yearPreset, JSON.stringify(genreFilter), streamingServices, streamingOnly])
 
   // Rescore in memory when taste profile changes — no API calls
   const movies = useMemo(() => {
@@ -245,6 +376,33 @@ export default function Suggestions() {
     (r) => !favoritePeople.some((f) => f.tmdb_person_id === r.id)
   )
 
+  // Count active filters for badge
+  const activeFilterCount = useMemo(() => {
+    let count = 0
+    if (yearPreset !== 'all') count++
+    const genreActive = Object.values(genreFilter).filter((v) => v === 'include' || v === 'exclude').length
+    if (genreActive > 0) count++
+    if (streamingServices.length > 0 || streamingOnly) count++
+    return count
+  }, [yearPreset, genreFilter, streamingServices, streamingOnly])
+
+  function cycleGenre(genreId) {
+    setGenreFilter((prev) => {
+      const current = prev[genreId]
+      if (!current) return { ...prev, [genreId]: 'include' }
+      if (current === 'include') return { ...prev, [genreId]: 'exclude' }
+      const next = { ...prev }
+      delete next[genreId]
+      return next
+    })
+  }
+
+  function toggleStreamingService(id) {
+    setStreamingServices((prev) =>
+      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
+    )
+  }
+
   return (
     <div className="min-h-screen bg-bg pb-28">
       <header
@@ -261,14 +419,32 @@ export default function Suggestions() {
                 <p className="text-text-secondary font-body text-xs mt-0.5">Ranked by your taste</p>
               </div>
             </div>
-            <button
-              onClick={() => setPages(pickRandomPages())}
-              disabled={loading}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-surface border border-accent-secondary/20 text-text-secondary text-sm font-body hover:text-accent hover:border-accent/30 transition-colors disabled:opacity-40"
-            >
-              {loading ? <RefreshCw size={14} className="animate-spin" /> : <Shuffle size={14} />}
-              {loading ? 'Loading…' : 'Shuffle'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setFilterOpen((v) => !v)}
+                className={`relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl border text-sm font-body transition-colors ${
+                  filterOpen || activeFilterCount > 0
+                    ? 'bg-accent/10 border-accent/30 text-accent'
+                    : 'bg-surface border-accent-secondary/20 text-text-secondary hover:text-accent hover:border-accent/30'
+                }`}
+              >
+                <SlidersHorizontal size={14} />
+                Filters
+                {activeFilterCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-accent text-white text-[10px] font-bold flex items-center justify-center leading-none">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setPages(pickRandomPages())}
+                disabled={loading}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-surface border border-accent-secondary/20 text-text-secondary text-sm font-body hover:text-accent hover:border-accent/30 transition-colors disabled:opacity-40"
+              >
+                {loading ? <RefreshCw size={14} className="animate-spin" /> : <Shuffle size={14} />}
+                {loading ? 'Loading…' : 'Shuffle'}
+              </button>
+            </div>
           </div>
 
           {/* People filter */}
@@ -351,6 +527,88 @@ export default function Suggestions() {
               </div>
             )}
           </div>
+
+          {/* Collapsible filter panel */}
+          {filterOpen && (
+            <div className="mb-3 rounded-2xl bg-surface border border-accent-secondary/15 p-4 space-y-4">
+              {/* Release Year */}
+              <div>
+                <p className="text-text-secondary text-xs font-body font-medium uppercase tracking-wide mb-2">Release Year</p>
+                <div className="flex flex-wrap gap-2">
+                  {YEAR_PRESETS.map((p) => (
+                    <button
+                      key={p.value}
+                      onClick={() => setYearPreset(p.value)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-body font-medium border transition-colors ${
+                        yearPreset === p.value
+                          ? 'bg-accent text-white border-accent'
+                          : 'bg-bg text-text-secondary border-accent-secondary/20 hover:border-accent/40'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Genres */}
+              <div>
+                <p className="text-text-secondary text-xs font-body font-medium uppercase tracking-wide mb-2">Genres</p>
+                <div className="flex flex-wrap gap-2">
+                  {TMDB_GENRES.map((g) => {
+                    const state = genreFilter[g.id]
+                    const isInclude = state === 'include'
+                    const isExclude = state === 'exclude'
+                    return (
+                      <button
+                        key={g.id}
+                        onClick={() => cycleGenre(g.id)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-body font-medium border transition-colors ${
+                          isInclude
+                            ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                            : isExclude
+                            ? 'bg-red-500/15 text-red-400 border-red-500/30'
+                            : 'bg-bg text-text-secondary border-accent-secondary/20 hover:border-accent/40'
+                        }`}
+                      >
+                        {isInclude ? '+' : isExclude ? '−' : ''}{isInclude || isExclude ? ' ' : ''}{g.name}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Streaming */}
+              <div>
+                <p className="text-text-secondary text-xs font-body font-medium uppercase tracking-wide mb-2">Streaming</p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setStreamingOnly((v) => !v)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-body font-medium border transition-colors flex items-center gap-1.5 ${
+                      streamingOnly
+                        ? 'bg-accent text-white border-accent'
+                        : 'bg-bg text-text-secondary border-accent-secondary/20 hover:border-accent/40'
+                    }`}
+                  >
+                    <span className="text-[10px]">●</span> Streaming only
+                  </button>
+                  {STREAMING_SERVICES.map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => toggleStreamingService(s.id)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-body font-medium border transition-colors ${
+                        streamingServices.includes(s.id)
+                          ? 'bg-accent text-white border-accent'
+                          : 'bg-bg text-text-secondary border-accent-secondary/20 hover:border-accent/40'
+                      }`}
+                    >
+                      {s.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Bucket filters + hide-seen */}
           <div className="flex items-center gap-2 pb-3">

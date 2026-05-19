@@ -25,13 +25,28 @@ export async function getNowPlaying(page = 1) {
  * Discover movies filtered by genre IDs (OR logic) and optionally people (cast OR crew).
  * withCast: matches actors only. withPeople: matches cast OR crew (use for directors too).
  */
-export async function discoverMovies({ genreIds = [], page = 1, sortBy = 'vote_average.desc', minVotes = 200, withCast = [], withPeople = [] } = {}) {
+export async function discoverMovies({
+  genreIds = [],
+  excludeGenreIds = [],
+  page = 1,
+  sortBy = 'vote_average.desc',
+  minVotes = 200,
+  withCast = [],
+  withPeople = [],
+  watchProviders = [],
+  yearFrom = null,
+  yearTo = null,
+} = {}) {
   return tmdbFetch('/discover/movie', {
     page,
     sort_by: sortBy,
     'vote_count.gte': minVotes,
     ...(genreIds.length ? { with_genres: genreIds.join('|') } : {}),
+    ...(excludeGenreIds.length ? { without_genres: excludeGenreIds.join(',') } : {}),
     ...(withPeople.length ? { with_people: withPeople.join(',') } : withCast.length ? { with_cast: withCast.join(',') } : {}),
+    ...(watchProviders.length ? { with_watch_providers: watchProviders.join('|'), watch_region: 'US' } : {}),
+    ...(yearFrom ? { 'primary_release_date.gte': `${yearFrom}-01-01` } : {}),
+    ...(yearTo ? { 'primary_release_date.lte': `${yearTo}-12-31` } : {}),
   })
 }
 

@@ -31,6 +31,25 @@ const YEAR_PRESETS = [
   { value: 'classics', label: 'Pre-1950s' },
 ]
 
+const ORIGIN_COUNTRIES = [
+  { code: 'US', label: 'American' },
+  { code: 'GB', label: 'British' },
+  { code: 'FR', label: 'French' },
+  { code: 'DE', label: 'German' },
+  { code: 'IT', label: 'Italian' },
+  { code: 'ES', label: 'Spanish' },
+  { code: 'JP', label: 'Japanese' },
+  { code: 'KR', label: 'Korean' },
+  { code: 'CN', label: 'Chinese' },
+  { code: 'IN', label: 'Indian' },
+  { code: 'MX', label: 'Mexican' },
+  { code: 'BR', label: 'Brazilian' },
+  { code: 'AU', label: 'Australian' },
+  { code: 'CA', label: 'Canadian' },
+]
+
+const CERTIFICATIONS = ['G', 'PG', 'PG-13', 'R', 'NC-17', 'NR']
+
 const STREAMING_SERVICES = [
   { id: 8,    name: 'Netflix' },
   { id: 9,    name: 'Prime Video' },
@@ -113,6 +132,8 @@ export default function Suggestions() {
   const [filterOpen, setFilterOpen] = useState(false)
   const [yearFilter, setYearFilter] = useState({}) // { [decade]: 'include' | 'exclude' }
   const [genreFilter, setGenreFilter] = useState({}) // { [genreId]: 'include' | 'exclude' }
+  const [countryFilter, setCountryFilter] = useState({}) // { [code]: 'include' | 'exclude' }
+  const [certFilter, setCertFilter] = useState({}) // { [cert]: 'include' | 'exclude' }
   const [streamingServices, setStreamingServices] = useState([])
   const [streamingOnly, setStreamingOnly] = useState(false)
 
@@ -169,7 +190,7 @@ export default function Suggestions() {
   const fetchMovies = useCallback(async (currentPages, prefs, tasteProf, people, filters) => {
     if (!prefs) return
     setLoading(true)
-    const { yearFilter: yf, genreFilter: gf, streamingServices: ss, streamingOnly: so } = filters || {}
+    const { yearFilter: yf, genreFilter: gf, countryFilter: cf, certFilter: certf, streamingServices: ss, streamingOnly: so } = filters || {}
     const includedDecades = Object.entries(yf || {}).filter(([, v]) => v === 'include').map(([k]) => k)
     const excludedDecades = Object.entries(yf || {}).filter(([, v]) => v === 'exclude').map(([k]) => k)
     // For API call: use broadest range of all included decades
@@ -183,6 +204,10 @@ export default function Suggestions() {
     }
     const includeGenres = Object.entries(gf || {}).filter(([, v]) => v === 'include').map(([id]) => Number(id))
     const excludeGenres = Object.entries(gf || {}).filter(([, v]) => v === 'exclude').map(([id]) => Number(id))
+    const includeCountries = Object.entries(cf || {}).filter(([, v]) => v === 'include').map(([k]) => k)
+    const excludeCountries = Object.entries(cf || {}).filter(([, v]) => v === 'exclude').map(([k]) => k)
+    const includeCerts = Object.entries(certf || {}).filter(([, v]) => v === 'include').map(([k]) => k)
+    const excludeCerts = Object.entries(certf || {}).filter(([, v]) => v === 'exclude').map(([k]) => k)
     const watchProviders = ss || []
     const useStreamingFilter = so || watchProviders.length > 0
 
@@ -233,6 +258,27 @@ export default function Suggestions() {
           detailList = detailList.filter((m) =>
             !(m.genres || []).some((g) => excludeGenres.includes(g.id))
           )
+        }
+
+        // Client-side country filter
+        if (includeCountries.length > 0 || excludeCountries.length > 0) {
+          detailList = detailList.filter((m) => {
+            const countries = m.origin_country || []
+            if (includeCountries.length > 0 && !includeCountries.some((c) => countries.includes(c))) return false
+            if (excludeCountries.some((c) => countries.includes(c))) return false
+            return true
+          })
+        }
+
+        // Client-side certification filter
+        if (includeCerts.length > 0 || excludeCerts.length > 0) {
+          detailList = detailList.filter((m) => {
+            const usCert = (m.release_dates?.results || [])
+              .find((r) => r.iso_3166_1 === 'US')?.release_dates?.[0]?.certification || ''
+            if (includeCerts.length > 0 && !includeCerts.includes(usCert)) return false
+            if (excludeCerts.includes(usCert)) return false
+            return true
+          })
         }
 
         // Client-side streaming filter
@@ -300,6 +346,8 @@ export default function Suggestions() {
             watchProviders: useStreamingFilter ? (watchProviders.length > 0 ? watchProviders : []) : [],
             yearFrom,
             yearTo,
+            originCountries: includeCountries,
+            certifications: includeCerts,
           }))
         )
         const results = fetches
@@ -323,6 +371,31 @@ export default function Suggestions() {
           .map((res, i) => {
             if (res.status !== 'fulfilled') return null
             const detail = res.value
+
+            // Client-side exclude filters (include handled by API)
+            if (excludeCountries.length > 0) {
+              const countries = detail.origin_country || []
+              if (excludeCountries.some((c) => countries.includes(c))) return null
+            }
+            if (excludeCerts.length > 0) {
+              const usCert = (detail.release_dates?.results || [])
+                .find((r) => r.iso_3166_1 === 'US')?.release_dates?.[0]?.certification || ''
+              if (excludeCerts.includes(usCert)) return null
+            }
+            // Also apply included decade client-side filter when needed
+            if (includedDecades.length > 0 || excludedDecades.length > 0) {
+              const y = detail.release_date ? new Date(detail.release_date).getFullYear() : null
+              if (!y) return null
+              if (includedDecades.length > 0 && !includedDecades.some((d) => {
+                const r = yearPresetToRange(d)
+                return (!r.yearFrom || y >= r.yearFrom) && (!r.yearTo || y <= r.yearTo)
+              })) return null
+              if (excludedDecades.some((d) => {
+                const r = yearPresetToRange(d)
+                return (!r.yearFrom || y >= r.yearFrom) && (!r.yearTo || y <= r.yearTo)
+              })) return null
+            }
+
             const omdb = omdbResults[i].status === 'fulfilled' ? omdbResults[i].value : null
             const director = detail.credits?.crew?.find((c) => c.job === 'Director') || null
             const cast = (detail.credits?.cast || []).slice(0, 10).map((c) => ({ id: c.id, name: c.name }))
@@ -358,8 +431,8 @@ export default function Suggestions() {
 
   // Re-fetch when pages, people, prefs, or filters change (not on tasteProfile — rescoring is in-memory)
   useEffect(() => {
-    if (userPrefs) fetchMovies(pages, userPrefs, tasteProfile, selectedPeople, { yearFilter, genreFilter, streamingServices, streamingOnly })
-  }, [pages, selectedPeople, userPrefs, JSON.stringify(yearFilter), JSON.stringify(genreFilter), streamingServices, streamingOnly])
+    if (userPrefs) fetchMovies(pages, userPrefs, tasteProfile, selectedPeople, { yearFilter, genreFilter, countryFilter, certFilter, streamingServices, streamingOnly })
+  }, [pages, selectedPeople, userPrefs, JSON.stringify(yearFilter), JSON.stringify(genreFilter), JSON.stringify(countryFilter), JSON.stringify(certFilter), streamingServices, streamingOnly])
 
   // Rescore in memory when taste profile changes — no API calls
   const movies = useMemo(() => {
@@ -404,13 +477,13 @@ export default function Suggestions() {
   // Count active filters for badge
   const activeFilterCount = useMemo(() => {
     let count = 0
-    const yearActive = Object.values(yearFilter).filter((v) => v === 'include' || v === 'exclude').length
-    if (yearActive > 0) count++
-    const genreActive = Object.values(genreFilter).filter((v) => v === 'include' || v === 'exclude').length
-    if (genreActive > 0) count++
+    if (Object.values(yearFilter).some((v) => v === 'include' || v === 'exclude')) count++
+    if (Object.values(genreFilter).some((v) => v === 'include' || v === 'exclude')) count++
+    if (Object.values(countryFilter).some((v) => v === 'include' || v === 'exclude')) count++
+    if (Object.values(certFilter).some((v) => v === 'include' || v === 'exclude')) count++
     if (streamingServices.length > 0 || streamingOnly) count++
     return count
-  }, [yearFilter, genreFilter, streamingServices, streamingOnly])
+  }, [yearFilter, genreFilter, countryFilter, certFilter, streamingServices, streamingOnly])
 
   function cycleYearFilter(key) {
     setYearFilter((prev) => {
@@ -419,6 +492,28 @@ export default function Suggestions() {
       if (current === 'include') return { ...prev, [key]: 'exclude' }
       const next = { ...prev }
       delete next[key]
+      return next
+    })
+  }
+
+  function cycleCountry(code) {
+    setCountryFilter((prev) => {
+      const current = prev[code]
+      if (!current) return { ...prev, [code]: 'include' }
+      if (current === 'include') return { ...prev, [code]: 'exclude' }
+      const next = { ...prev }
+      delete next[code]
+      return next
+    })
+  }
+
+  function cycleCert(cert) {
+    setCertFilter((prev) => {
+      const current = prev[cert]
+      if (!current) return { ...prev, [cert]: 'include' }
+      if (current === 'include') return { ...prev, [cert]: 'exclude' }
+      const next = { ...prev }
+      delete next[cert]
       return next
     })
   }
@@ -616,6 +711,60 @@ export default function Suggestions() {
                         }`}
                       >
                         {isInclude ? '+' : isExclude ? '−' : ''}{isInclude || isExclude ? ' ' : ''}{g.name}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Country of Origin */}
+              <div>
+                <p className="text-text-secondary text-xs font-body font-medium uppercase tracking-wide mb-2">Country of Origin</p>
+                <div className="flex flex-wrap gap-2">
+                  {ORIGIN_COUNTRIES.map((c) => {
+                    const state = countryFilter[c.code]
+                    const isInclude = state === 'include'
+                    const isExclude = state === 'exclude'
+                    return (
+                      <button
+                        key={c.code}
+                        onClick={() => cycleCountry(c.code)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-body font-medium border transition-colors ${
+                          isInclude
+                            ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                            : isExclude
+                            ? 'bg-red-500/15 text-red-400 border-red-500/30'
+                            : 'bg-bg text-text-secondary border-accent-secondary/20 hover:border-accent/40'
+                        }`}
+                      >
+                        {isInclude ? '+ ' : isExclude ? '− ' : ''}{c.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Rating */}
+              <div>
+                <p className="text-text-secondary text-xs font-body font-medium uppercase tracking-wide mb-2">Rating</p>
+                <div className="flex flex-wrap gap-2">
+                  {CERTIFICATIONS.map((cert) => {
+                    const state = certFilter[cert]
+                    const isInclude = state === 'include'
+                    const isExclude = state === 'exclude'
+                    return (
+                      <button
+                        key={cert}
+                        onClick={() => cycleCert(cert)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-body font-medium border transition-colors ${
+                          isInclude
+                            ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                            : isExclude
+                            ? 'bg-red-500/15 text-red-400 border-red-500/30'
+                            : 'bg-bg text-text-secondary border-accent-secondary/20 hover:border-accent/40'
+                        }`}
+                      >
+                        {isInclude ? '+ ' : isExclude ? '− ' : ''}{cert}
                       </button>
                     )
                   })}

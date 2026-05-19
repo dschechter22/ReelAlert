@@ -36,6 +36,8 @@ export async function discoverMovies({
   watchProviders = [],
   yearFrom = null,
   yearTo = null,
+  originCountries = [],
+  certifications = [],
 } = {}) {
   return tmdbFetch('/discover/movie', {
     page,
@@ -47,6 +49,8 @@ export async function discoverMovies({
     ...(watchProviders.length ? { with_watch_providers: watchProviders.join('|'), watch_region: 'US' } : {}),
     ...(yearFrom ? { 'primary_release_date.gte': `${yearFrom}-01-01` } : {}),
     ...(yearTo ? { 'primary_release_date.lte': `${yearTo}-12-31` } : {}),
+    ...(originCountries.length ? { with_origin_country: originCountries.join('|') } : {}),
+    ...(certifications.length ? { certification_country: 'US', certification: certifications.join('|') } : {}),
   })
 }
 

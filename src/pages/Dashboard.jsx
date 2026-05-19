@@ -7,7 +7,7 @@ import ReelScoreDrawer from '../components/ReelScoreDrawer'
 import TabBar from '../components/TabBar'
 import OnboardingModal from '../modals/OnboardingModal'
 import CalibrationBanner from '../components/CalibrationBanner'
-import { Film, Search, SlidersHorizontal } from 'lucide-react'
+import { Film, Search, SlidersHorizontal, EyeOff } from 'lucide-react'
 
 const BUCKET_FILTERS = [
   { value: 'all', label: 'All' },
@@ -27,6 +27,7 @@ export default function Dashboard() {
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [bucketFilter, setBucketFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
+  const [hideWatched, setHideWatched] = useState(false)
 
   // Show onboarding for new users (no zip_code set)
   useEffect(() => {
@@ -52,7 +53,8 @@ export default function Dashboard() {
   const filtered = movies.filter((m) => {
     const matchesBucket = bucketFilter === 'all' || m.bucket === bucketFilter
     const matchesSearch = !searchQuery || m.title.toLowerCase().includes(searchQuery.toLowerCase())
-    return matchesBucket && matchesSearch
+    const matchesWatched = !hideWatched || !ratings[String(m.tmdb_id ?? m.id)]
+    return matchesBucket && matchesSearch && matchesWatched
   })
 
   return (
@@ -87,21 +89,34 @@ export default function Dashboard() {
             />
           </div>
 
-          {/* Bucket filters */}
-          <div className="flex gap-2 overflow-x-auto pb-3 scrollbar-none">
-            {BUCKET_FILTERS.map((f) => (
-              <button
-                key={f.value}
-                onClick={() => setBucketFilter(f.value)}
-                className={`flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium font-body transition-colors border ${
-                  bucketFilter === f.value
-                    ? 'bg-accent text-white border-accent'
-                    : 'bg-surface text-text-secondary border-accent-secondary/20 hover:border-accent/40'
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
+          {/* Bucket filters + hide seen */}
+          <div className="flex items-center gap-2 pb-3">
+            <div className="flex gap-2 overflow-x-auto scrollbar-none flex-1">
+              {BUCKET_FILTERS.map((f) => (
+                <button
+                  key={f.value}
+                  onClick={() => setBucketFilter(f.value)}
+                  className={`flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium font-body transition-colors border ${
+                    bucketFilter === f.value
+                      ? 'bg-accent text-white border-accent'
+                      : 'bg-surface text-text-secondary border-accent-secondary/20 hover:border-accent/40'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setHideWatched((v) => !v)}
+              className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-body font-medium border transition-colors ${
+                hideWatched
+                  ? 'bg-accent text-white border-accent'
+                  : 'bg-surface text-text-secondary border-accent-secondary/20 hover:border-accent/40'
+              }`}
+            >
+              <EyeOff size={13} />
+              Hide seen
+            </button>
           </div>
         </div>
       </header>

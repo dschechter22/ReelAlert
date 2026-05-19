@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { useRatings } from '../contexts/RatingsContext'
@@ -52,6 +53,7 @@ export default function Settings() {
   const { user, signOut } = useAuth()
   const { theme, setTheme, typography, setTypography } = useTheme()
   const { tasteProfile, ratingRows, rate, removeRating } = useRatings()
+  const navigate = useNavigate()
 
   const [cadence, setCadence] = useState('weekly')
   const [smsTime, setSmsTime] = useState('10:00')
@@ -607,6 +609,25 @@ export default function Settings() {
               ))}
             </div>
           </div>
+        </div>
+
+        {/* Legal */}
+        <SectionHeader icon={ChevronRight} title="Legal" />
+        <div className="bg-surface rounded-2xl overflow-hidden">
+          <button
+            onClick={() => navigate('/terms')}
+            className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-accent/5 transition-colors border-b border-accent-secondary/10"
+          >
+            <span className="font-body text-sm text-text">Terms of Service</span>
+            <ChevronRight size={16} className="text-text-secondary" />
+          </button>
+          <button
+            onClick={() => navigate('/privacy')}
+            className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-accent/5 transition-colors"
+          >
+            <span className="font-body text-sm text-text">Privacy Policy</span>
+            <ChevronRight size={16} className="text-text-secondary" />
+          </button>
         </div>
 
         {/* Account */}

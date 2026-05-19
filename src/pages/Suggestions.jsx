@@ -20,7 +20,6 @@ const BUCKET_FILTERS = [
 ]
 
 const YEAR_PRESETS = [
-  { value: 'all',      label: 'All' },
   { value: '2020s',    label: '2020s' },
   { value: '2010s',    label: '2010s' },
   { value: '2000s',    label: '2000s' },
@@ -112,7 +111,7 @@ export default function Suggestions() {
 
   // Filter panel
   const [filterOpen, setFilterOpen] = useState(false)
-  const [yearPreset, setYearPreset] = useState('all')
+  const [yearFilter, setYearFilter] = useState({}) // { [decade]: 'include' | 'exclude' }
   const [genreFilter, setGenreFilter] = useState({}) // { [genreId]: 'include' | 'exclude' }
   const [streamingServices, setStreamingServices] = useState([])
   const [streamingOnly, setStreamingOnly] = useState(false)
@@ -170,8 +169,18 @@ export default function Suggestions() {
   const fetchMovies = useCallback(async (currentPages, prefs, tasteProf, people, filters) => {
     if (!prefs) return
     setLoading(true)
-    const { yearPreset: yp, genreFilter: gf, streamingServices: ss, streamingOnly: so } = filters || {}
-    const { yearFrom, yearTo } = yearPresetToRange(yp || 'all')
+    const { yearFilter: yf, genreFilter: gf, streamingServices: ss, streamingOnly: so } = filters || {}
+    const includedDecades = Object.entries(yf || {}).filter(([, v]) => v === 'include').map(([k]) => k)
+    const excludedDecades = Object.entries(yf || {}).filter(([, v]) => v === 'exclude').map(([k]) => k)
+    // For API call: use broadest range of all included decades
+    let yearFrom = null, yearTo = null
+    if (includedDecades.length > 0) {
+      const ranges = includedDecades.map((d) => yearPresetToRange(d))
+      const froms = ranges.map((r) => r.yearFrom).filter(Boolean)
+      const tos = ranges.map((r) => r.yearTo).filter(Boolean)
+      yearFrom = froms.length > 0 ? Math.min(...froms) : null
+      yearTo = tos.length > 0 ? Math.max(...tos) : null
+    }
     const includeGenres = Object.entries(gf || {}).filter(([, v]) => v === 'include').map(([id]) => Number(id))
     const excludeGenres = Object.entries(gf || {}).filter(([, v]) => v === 'exclude').map(([id]) => Number(id))
     const watchProviders = ss || []
@@ -198,12 +207,18 @@ export default function Suggestions() {
           .map((r) => r.value)
 
         // Client-side year filter
-        if (yearFrom || yearTo) {
+        if (includedDecades.length > 0 || excludedDecades.length > 0) {
           detailList = detailList.filter((m) => {
             const y = m.release_date ? new Date(m.release_date).getFullYear() : null
             if (!y) return false
-            if (yearFrom && y < yearFrom) return false
-            if (yearTo && y > yearTo) return false
+            if (includedDecades.length > 0 && !includedDecades.some((d) => {
+              const r = yearPresetToRange(d)
+              return (!r.yearFrom || y >= r.yearFrom) && (!r.yearTo || y <= r.yearTo)
+            })) return false
+            if (excludedDecades.some((d) => {
+              const r = yearPresetToRange(d)
+              return (!r.yearFrom || y >= r.yearFrom) && (!r.yearTo || y <= r.yearTo)
+            })) return false
             return true
           })
         }
@@ -343,8 +358,8 @@ export default function Suggestions() {
 
   // Re-fetch when pages, people, prefs, or filters change (not on tasteProfile — rescoring is in-memory)
   useEffect(() => {
-    if (userPrefs) fetchMovies(pages, userPrefs, tasteProfile, selectedPeople, { yearPreset, genreFilter, streamingServices, streamingOnly })
-  }, [pages, selectedPeople, userPrefs, yearPreset, JSON.stringify(genreFilter), streamingServices, streamingOnly])
+    if (userPrefs) fetchMovies(pages, userPrefs, tasteProfile, selectedPeople, { yearFilter, genreFilter, streamingServices, streamingOnly })
+  }, [pages, selectedPeople, userPrefs, JSON.stringify(yearFilter), JSON.stringify(genreFilter), streamingServices, streamingOnly])
 
   // Rescore in memory when taste profile changes — no API calls
   const movies = useMemo(() => {
@@ -389,12 +404,24 @@ export default function Suggestions() {
   // Count active filters for badge
   const activeFilterCount = useMemo(() => {
     let count = 0
-    if (yearPreset !== 'all') count++
+    const yearActive = Object.values(yearFilter).filter((v) => v === 'include' || v === 'exclude').length
+    if (yearActive > 0) count++
     const genreActive = Object.values(genreFilter).filter((v) => v === 'include' || v === 'exclude').length
     if (genreActive > 0) count++
     if (streamingServices.length > 0 || streamingOnly) count++
     return count
-  }, [yearPreset, genreFilter, streamingServices, streamingOnly])
+  }, [yearFilter, genreFilter, streamingServices, streamingOnly])
+
+  function cycleYearFilter(key) {
+    setYearFilter((prev) => {
+      const current = prev[key]
+      if (!current) return { ...prev, [key]: 'include' }
+      if (current === 'include') return { ...prev, [key]: 'exclude' }
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+  }
 
   function cycleGenre(genreId) {
     setGenreFilter((prev) => {
@@ -545,19 +572,26 @@ export default function Suggestions() {
               <div>
                 <p className="text-text-secondary text-xs font-body font-medium uppercase tracking-wide mb-2">Release Year</p>
                 <div className="flex flex-wrap gap-2">
-                  {YEAR_PRESETS.map((p) => (
-                    <button
-                      key={p.value}
-                      onClick={() => setYearPreset(p.value)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-body font-medium border transition-colors ${
-                        yearPreset === p.value
-                          ? 'bg-accent text-white border-accent'
-                          : 'bg-bg text-text-secondary border-accent-secondary/20 hover:border-accent/40'
-                      }`}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
+                  {YEAR_PRESETS.map((p) => {
+                    const state = yearFilter[p.value]
+                    const isInclude = state === 'include'
+                    const isExclude = state === 'exclude'
+                    return (
+                      <button
+                        key={p.value}
+                        onClick={() => cycleYearFilter(p.value)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-body font-medium border transition-colors ${
+                          isInclude
+                            ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                            : isExclude
+                            ? 'bg-red-500/15 text-red-400 border-red-500/30'
+                            : 'bg-bg text-text-secondary border-accent-secondary/20 hover:border-accent/40'
+                        }`}
+                      >
+                        {isInclude ? '+ ' : isExclude ? '− ' : ''}{p.label}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
 

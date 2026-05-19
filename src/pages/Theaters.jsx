@@ -267,7 +267,7 @@ export default function Theaters() {
           <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
             <p className="font-body text-text-secondary text-sm max-w-xs">{error}</p>
             <button
-              onClick={() => search(searchedZip, selectedDate, radius)}
+              onClick={() => search(searchedZip, selectedDate, searchedMovie)}
               className="px-4 py-2 bg-accent text-white rounded-xl text-sm font-body font-medium hover:opacity-90 transition-opacity"
             >
               Retry

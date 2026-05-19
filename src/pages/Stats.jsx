@@ -1,6 +1,8 @@
 import { useState, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useRatings } from '../contexts/RatingsContext'
+import { useAuth } from '../contexts/AuthContext'
+import { supabase } from '../lib/supabase'
 import { getMovieDetails } from '../lib/tmdb'
 import { TMDB_GENRES } from '../lib/tmdb'
 import { ArrowLeft, RefreshCw, BarChart3, X } from 'lucide-react'
@@ -17,6 +19,17 @@ const RATING_COLORS = {
 const RATING_LABELS = {
   liked: 'Liked', disliked: 'Disliked', seen: 'Seen', not_interested: 'Not Interested',
 }
+
+// Maps taste_weight → display label (matches the tier system in Settings)
+const STAR_TIERS = [
+  { weight: 3,    label: '★★★★★',  sub: '5 stars',   color: 'bg-emerald-500' },
+  { weight: 2,    label: '★★★★',   sub: '4 stars',   color: 'bg-emerald-400' },
+  { weight: 1,    label: '★★★½',   sub: '3.5 stars', color: 'bg-green-400' },
+  { weight: 0,    label: '★★★',    sub: '3 stars',   color: 'bg-accent' },
+  { weight: -1,   label: '★★½',    sub: '2.5 stars', color: 'bg-amber-500' },
+  { weight: -2,   label: '★★',     sub: '2 stars',   color: 'bg-orange-500' },
+  { weight: -3,   label: '★',      sub: '1.5 stars or below', color: 'bg-red-500' },
+]
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -54,12 +67,19 @@ function computeStats(rows, enrichCache) {
   }))
 
   const byType = { liked: 0, disliked: 0, seen: 0, not_interested: 0 }
+  const starDist = {}  // taste_weight → count
   const genres = {}, decades = {}, directors = {}, actors = {}, keywords = {}
   const countries = {}, studios = {}, collections = {}, activity = {}
 
   for (const r of merged) {
     byType[r.rating] = (byType[r.rating] || 0) + 1
     const w = r.taste_weight ?? 0
+
+    // star distribution — only count rows that have a meaningful weight
+    if (r.taste_weight != null) {
+      const tw = Math.round(r.taste_weight)  // snap to integer tier
+      starDist[tw] = (starDist[tw] || 0) + 1
+    }
 
     // genres
     for (const id of r.genre_ids || []) {
@@ -123,6 +143,7 @@ function computeStats(rows, enrichCache) {
   return {
     total: merged.length,
     byType,
+    starDist,
     genres:      topN(genres, 20),
     decades:     Object.entries(decades)
       .map(([d, v]) => ({ key: d, ...v, avg: v.count > 0 ? v.total / v.count : 0 }))
@@ -237,6 +258,7 @@ function DecadeBar({ decade, count, avg, maxCount, onFilter }) {
 
 export default function Stats() {
   const { ratingRows } = useRatings()
+  const { user } = useAuth()
   const navigate = useNavigate()
 
   const [enrichCache, setEnrichCache] = useState({})
@@ -254,6 +276,7 @@ export default function Stats() {
     setEnriching(true)
     const total = needsEnrichment.length
     setEnrichProgress({ done: 0, total })
+    const allPatches = {}
 
     for (let i = 0; i < total; i += 5) {
       const batch = needsEnrichment.slice(i, i + 5)
@@ -271,13 +294,27 @@ export default function Stats() {
           collection:     d.belongs_to_collection?.name ?? null,
         }
       })
+      Object.assign(allPatches, patch)
       setEnrichCache((prev) => ({ ...prev, ...patch }))
       setEnrichProgress({ done: Math.min(i + 5, total), total })
       if (i + 5 < total) await new Promise((r) => setTimeout(r, 350))
     }
+
+    // Persist enrichment back to Supabase so this only runs once
+    if (user && Object.keys(allPatches).length) {
+      const rows = Object.entries(allPatches).map(([tmdbId, data]) => ({
+        user_id: user.id,
+        tmdb_id: Number(tmdbId),
+        ...data,
+      }))
+      await supabase
+        .from('user_movie_ratings')
+        .upsert(rows, { onConflict: 'user_id,tmdb_id' })
+    }
+
     setEnriching(false)
     setEnrichProgress(null)
-  }, [needsEnrichment])
+  }, [needsEnrichment, user])
 
   const filteredRows = useMemo(
     () => filterRows(ratingRows, enrichCache, activeFilter),
@@ -402,6 +439,30 @@ export default function Stats() {
             })}
           </div>
         </section>
+
+        {/* ── Star distribution ─────────────────────────────────────────── */}
+        {Object.keys(stats.starDist).length > 1 && (
+          <section>
+            <SectionHeader title="Star Distribution" />
+            <div className="space-y-1.5">
+              {STAR_TIERS.map((tier) => {
+                const count = stats.starDist[tier.weight] || 0
+                const maxCount = Math.max(...STAR_TIERS.map((t) => stats.starDist[t.weight] || 0), 1)
+                const pct = Math.round((count / maxCount) * 100)
+                if (!count) return null
+                return (
+                  <div key={tier.weight} className="flex items-center gap-3">
+                    <span className="font-body text-xs text-amber-400 w-16 flex-shrink-0">{tier.label}</span>
+                    <div className="flex-1 h-2 bg-surface rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full ${tier.color}`} style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="text-text-secondary text-xs font-body w-6 text-right">{count}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        )}
 
         {/* ── Enrichment CTA ───────────────────────────────────────────── */}
         {needsEnrichment.length > 0 && (

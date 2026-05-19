@@ -20,11 +20,16 @@ const BUCKET_FILTERS = [
 ]
 
 const YEAR_PRESETS = [
-  { value: 'all', label: 'All' },
-  { value: '2020s', label: '2020s' },
-  { value: '2010s', label: '2010s' },
-  { value: '2000s', label: '2000s' },
-  { value: 'classics', label: 'Classics' },
+  { value: 'all',      label: 'All' },
+  { value: '2020s',    label: '2020s' },
+  { value: '2010s',    label: '2010s' },
+  { value: '2000s',    label: '2000s' },
+  { value: '1990s',    label: '1990s' },
+  { value: '1980s',    label: '1980s' },
+  { value: '1970s',    label: '1970s' },
+  { value: '1960s',    label: '1960s' },
+  { value: '1950s',    label: '1950s' },
+  { value: 'classics', label: 'Pre-1950s' },
 ]
 
 const STREAMING_SERVICES = [
@@ -42,10 +47,15 @@ const CURRENT_YEAR = new Date().getFullYear()
 
 function yearPresetToRange(preset) {
   switch (preset) {
-    case '2020s': return { yearFrom: 2020, yearTo: CURRENT_YEAR }
-    case '2010s': return { yearFrom: 2010, yearTo: 2019 }
-    case '2000s': return { yearFrom: 2000, yearTo: 2009 }
-    case 'classics': return { yearFrom: null, yearTo: 1999 }
+    case '2020s':    return { yearFrom: 2020, yearTo: CURRENT_YEAR }
+    case '2010s':    return { yearFrom: 2010, yearTo: 2019 }
+    case '2000s':    return { yearFrom: 2000, yearTo: 2009 }
+    case '1990s':    return { yearFrom: 1990, yearTo: 1999 }
+    case '1980s':    return { yearFrom: 1980, yearTo: 1989 }
+    case '1970s':    return { yearFrom: 1970, yearTo: 1979 }
+    case '1960s':    return { yearFrom: 1960, yearTo: 1969 }
+    case '1950s':    return { yearFrom: 1950, yearTo: 1959 }
+    case 'classics': return { yearFrom: null, yearTo: 1949 }
     default: return { yearFrom: null, yearTo: null }
   }
 }

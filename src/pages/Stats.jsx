@@ -68,9 +68,9 @@ function computeStats(rows, enrichCache) {
       genres[k].count++; genres[k].total += w
     }
 
-    // decades
+    // decades — pre-1950 all bucket as 'classics'
     if (r.release_year) {
-      const d = Math.floor(r.release_year / 10) * 10
+      const d = r.release_year < 1950 ? 'classics' : Math.floor(r.release_year / 10) * 10
       if (!decades[d]) decades[d] = { count: 0, total: 0 }
       decades[d].count++; decades[d].total += w
     }
@@ -126,7 +126,11 @@ function computeStats(rows, enrichCache) {
     genres:      topN(genres, 20),
     decades:     Object.entries(decades)
       .map(([d, v]) => ({ key: d, ...v, avg: v.count > 0 ? v.total / v.count : 0 }))
-      .sort((a, b) => Number(a.key) - Number(b.key)),
+      .sort((a, b) => {
+        if (a.key === 'classics') return 1
+        if (b.key === 'classics') return -1
+        return Number(b.key) - Number(a.key)
+      }),
     directors:   topN(directors, 20),
     actors:      topN(actors, 20),
     keywords:    topN(keywords, 30, 'total'),
@@ -163,7 +167,10 @@ function filterRows(rows, enrichCache, activeFilter) {
   }))
   const { dim, value } = activeFilter
   return merged.filter((r) => {
-    if (dim === 'decade') return r.release_year && Math.floor(r.release_year / 10) * 10 === Number(value)
+    if (dim === 'decade') {
+      if (value === 'classics') return r.release_year && r.release_year < 1950
+      return r.release_year && Math.floor(r.release_year / 10) * 10 === Number(value)
+    }
     if (dim === 'genre') return (r.genre_ids || []).map(String).includes(String(value))
     if (dim === 'director') return r.director_name === value
     if (dim === 'actor') return (r.top_cast || []).includes(value)
@@ -208,7 +215,7 @@ function StatRow({ label, count, avg, maxCount, onFilter }) {
 
 function DecadeBar({ decade, count, avg, maxCount, onFilter }) {
   const pct = maxCount > 0 ? Math.round((count / maxCount) * 100) : 0
-  const label = decade < 2000 ? `${decade}s` : decade === 2020 ? '2020s' : `${decade}s`
+  const label = decade === 'classics' ? 'Pre-1950s' : `${decade}s`
   return (
     <button
       onClick={onFilter}
@@ -458,11 +465,11 @@ export default function Stats() {
               {stats.decades.map((d) => (
                 <DecadeBar
                   key={d.key}
-                  decade={Number(d.key)}
+                  decade={d.key === 'classics' ? 'classics' : Number(d.key)}
                   count={d.count}
                   avg={d.avg}
                   maxCount={maxDecade}
-                  onFilter={() => setFilter('decade', d.key, `${d.key}s`)}
+                  onFilter={() => setFilter('decade', d.key, d.key === 'classics' ? 'Pre-1950s' : `${d.key}s`)}
                 />
               ))}
             </div>

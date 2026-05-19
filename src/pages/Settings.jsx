@@ -68,9 +68,6 @@ export default function Settings() {
   const [lbResult, setLbResult] = useState(null)
   const [lbProgress, setLbProgress] = useState(null) // { current, total }
   const lbInputRef = useRef(null)
-  const [lbUsername, setLbUsername] = useState('')
-  const [lbUsernameImporting, setLbUsernameImporting] = useState(false)
-  const [lbUsernameResult, setLbUsernameResult] = useState(null)
 
   // Scoring weights (raw units, normalized to 100% internally)
   const [scoringWeights, setScoringWeights] = useState(DEFAULT_SCORING_WEIGHTS)
@@ -258,71 +255,6 @@ export default function Settings() {
       setLbImporting(false)
       setLbProgress(null)
       if (lbInputRef.current) lbInputRef.current.value = ''
-    }
-  }
-
-  async function handleLetterboxdUsernameImport(e) {
-    e.preventDefault()
-    if (!lbUsername.trim()) return
-    setLbUsernameImporting(true)
-    setLbUsernameResult(null)
-
-    try {
-      const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
-      const { data: { session } } = await supabase.auth.getSession()
-      const token = session?.access_token ?? SUPABASE_ANON_KEY
-
-      const url = new URL(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/letterboxd-scrape`)
-      url.searchParams.set('username', lbUsername.trim())
-
-      const res = await fetch(url.toString(), {
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? `Failed (${res.status})`)
-
-      const films = data.films ?? []
-      const warning = data.warning ?? null
-      if (!films.length) throw new Error('No rated films found on that profile. Make sure the account is public.')
-      if (warning) setLbUsernameResult({ warning })
-
-      // Import using same logic as CSV — map rating → bucket + taste_weight
-      let imported = 0, failed = 0
-      setLbProgress({ current: 0, total: films.length })
-
-      for (const film of films) {
-        try {
-          const searchRes = await searchMovies(film.title, 1, film.year ?? null)
-          const match = searchRes?.results?.[0]
-          if (!match) { failed++; continue }
-
-          const lb = film.rating  // 0.5–5.0
-          let rating = 'seen', tasteWeight = 0
-          if (lb != null) {
-            if (lb >= 4.5)      { rating = 'liked';    tasteWeight = 3 }
-            else if (lb >= 4.0) { rating = 'liked';    tasteWeight = 2 }
-            else if (lb >= 3.5) { rating = 'liked';    tasteWeight = 1 }
-            else if (lb >= 3.0) { rating = 'seen';     tasteWeight = 0 }
-            else if (lb >= 2.5) { rating = 'disliked'; tasteWeight = -1 }
-            else if (lb >= 2.0) { rating = 'disliked'; tasteWeight = -2 }
-            else                { rating = 'disliked'; tasteWeight = -3 }
-          }
-
-          await rate(match, rating, tasteWeight)
-          imported++
-          setLbProgress({ current: imported + failed, total: films.length })
-          await new Promise((r) => setTimeout(r, 275))
-        } catch {
-          failed++
-        }
-      }
-
-      setLbUsernameResult((prev) => ({ ...prev, imported, failed }))
-    } catch (err) {
-      setLbUsernameResult({ error: err.message })
-    } finally {
-      setLbUsernameImporting(false)
-      setLbProgress(null)
     }
   }
 
@@ -567,71 +499,30 @@ export default function Settings() {
 
         {/* Letterboxd Import */}
         <SectionHeader icon={Upload} title="Import from Letterboxd" />
-        <div className="bg-surface rounded-2xl p-4 space-y-4">
+        <div className="bg-surface rounded-2xl p-4 space-y-3">
           <p className="text-text-secondary font-body text-sm">
             Import your Letterboxd ratings to instantly calibrate your taste profile.
           </p>
-
-          {/* Username import */}
-          <div className="space-y-2">
-            <p className="text-text font-body text-xs font-medium">Import by username</p>
-            <form onSubmit={handleLetterboxdUsernameImport} className="flex gap-2">
-              <input
-                type="text"
-                value={lbUsername}
-                onChange={(e) => setLbUsername(e.target.value)}
-                placeholder="letterboxd username"
-                className="flex-1 bg-bg border border-accent-secondary/20 rounded-xl px-3 py-2 text-sm text-text font-body placeholder-text-secondary focus:outline-none focus:border-accent/40"
-              />
-              <button
-                type="submit"
-                disabled={lbUsernameImporting || !lbUsername.trim()}
-                className="px-4 py-2 bg-accent text-white rounded-xl text-sm font-body font-medium hover:opacity-90 disabled:opacity-50 transition-opacity flex items-center gap-1.5"
-              >
-                {lbUsernameImporting && <RefreshCw size={13} className="animate-spin" />}
-                Import
-              </button>
-            </form>
-            {lbUsernameResult && (
-              <div className="space-y-1">
-                {lbUsernameResult.warning && (
-                  <p className="font-body text-xs text-amber-400">{lbUsernameResult.warning}</p>
-                )}
-                {lbUsernameResult.error && (
-                  <p className="font-body text-sm text-red-400">{lbUsernameResult.error}</p>
-                )}
-                {lbUsernameResult.imported != null && (
-                  <p className="font-body text-sm text-emerald-400">
-                    Imported {lbUsernameResult.imported} films{lbUsernameResult.failed ? ` · ${lbUsernameResult.failed} not matched` : ''}.
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="border-t border-accent-secondary/15 pt-3 space-y-2">
-            <p className="text-text font-body text-xs font-medium">Or upload ratings.csv</p>
-            <ol className="text-text-secondary/70 font-body text-xs space-y-1 list-decimal ml-4">
-              <li>Go to letterboxd.com → Settings → Import & Export</li>
-              <li>Click "Export Your Data" and download the ZIP</li>
-              <li>Extract the ZIP and upload the <span className="text-text font-medium">ratings.csv</span> file below</li>
-            </ol>
-            <input
-              ref={lbInputRef}
-              type="file"
-              accept=".csv"
-              className="hidden"
-              onChange={handleLetterboxdImport}
-            />
-            <button
-              onClick={() => lbInputRef.current?.click()}
-              disabled={lbImporting}
-              className="flex items-center gap-2 px-4 py-2.5 bg-bg border border-accent-secondary/20 rounded-xl text-text font-body text-sm hover:border-accent/30 transition-colors disabled:opacity-60"
-            >
-              <Upload size={15} />
-              {lbImporting ? 'Importing…' : 'Upload ratings.csv'}
-            </button>
-          </div>
+          <ol className="text-text-secondary/70 font-body text-xs space-y-1 list-decimal ml-4">
+            <li>Go to letterboxd.com → Settings → Import & Export</li>
+            <li>Click "Export Your Data" and download the ZIP</li>
+            <li>Extract the ZIP and upload the <span className="text-text font-medium">ratings.csv</span> file below</li>
+          </ol>
+          <input
+            ref={lbInputRef}
+            type="file"
+            accept=".csv"
+            className="hidden"
+            onChange={handleLetterboxdImport}
+          />
+          <button
+            onClick={() => lbInputRef.current?.click()}
+            disabled={lbImporting}
+            className="flex items-center gap-2 px-4 py-2.5 bg-bg border border-accent-secondary/20 rounded-xl text-text font-body text-sm hover:border-accent/30 transition-colors disabled:opacity-60"
+          >
+            <Upload size={15} />
+            {lbImporting ? 'Importing…' : 'Upload ratings.csv'}
+          </button>
           {lbProgress && (
             <div>
               <div className="flex justify-between text-xs font-body text-text-secondary mb-1">

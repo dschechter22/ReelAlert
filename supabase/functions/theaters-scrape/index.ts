@@ -1,19 +1,16 @@
 /**
- * Multi-chain theater showtimes aggregator.
+ * Theater showtimes via SerpAPI Google Showtimes.
  *
- * Fetches from AMC (official API), Cinemark (internal JSON API), and Regal
- * (internal JSON API) concurrently. Each chain is independently error-isolated
- * — if one fails the others still return.
+ * Searches Google for "movies near [zip]" and extracts the structured
+ * showtimes panel that Google renders for all major chains.
  *
  * Query params:
- *   lat      – decimal latitude (required)
- *   lon      – decimal longitude (required)
- *   radius   – search radius in miles (default 15)
- *   date     – YYYY-MM-DD (default today)
- *   chains   – comma-separated list: amc,cinemark,regal (default all)
+ *   zip      – US zip code (required)
+ *   date     – YYYY-MM-DD (default today; used to select the right day bucket)
+ *   radius   – ignored here, Google uses its own proximity logic
  *
- * Required Supabase secrets:
- *   AMC_API_KEY  (optional — AMC results skipped when absent)
+ * Required Supabase secret:
+ *   SERPAPI_KEY
  */
 
 const CORS = {
@@ -22,10 +19,7 @@ const CORS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const BROWSER_UA =
-  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
-
-// ── type ─────────────────────────────────────────────────────────────────────
+// ── types ─────────────────────────────────────────────────────────────────────
 
 interface ShowBlock {
   format: string
@@ -34,14 +28,12 @@ interface ShowBlock {
 
 interface MovieEntry {
   movieTitle: string
-  posterPath?: string
-  tmdbId?: number
   formats: ShowBlock[]
 }
 
 interface Theater {
   id: string
-  chain: 'amc' | 'cinemark' | 'regal' | 'other'
+  chain: string
   name: string
   address: string
   distance?: number
@@ -49,261 +41,232 @@ interface Theater {
   showtimes: MovieEntry[]
 }
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+// ── chain detection ───────────────────────────────────────────────────────────
 
-function todayStr() {
-  return new Date().toISOString().split('T')[0]
+function detectChain(name: string): string {
+  const n = name.toLowerCase()
+  if (n.includes('amc'))      return 'amc'
+  if (n.includes('regal'))    return 'regal'
+  if (n.includes('cinemark')) return 'cinemark'
+  if (n.includes('alamo'))    return 'alamo'
+  if (n.includes('marcus'))   return 'marcus'
+  if (n.includes('landmark')) return 'landmark'
+  if (n.includes('ipic'))     return 'ipic'
+  if (n.includes('harkins'))  return 'harkins'
+  if (n.includes('showcase')) return 'showcase'
+  if (n.includes('bow tie') || n.includes('bow-tie')) return 'bowtie'
+  return 'other'
 }
 
-function fmtTime(iso: string): string {
-  try {
-    const d = new Date(iso)
-    if (isNaN(d.getTime())) return iso
-    return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-  } catch {
-    return iso
-  }
+function parseDistance(raw: string | undefined): number | undefined {
+  if (!raw) return undefined
+  const m = raw.match(/([\d.]+)/)
+  return m ? parseFloat(m[1]) : undefined
 }
 
-// ── AMC ──────────────────────────────────────────────────────────────────────
+// ── SerpAPI call ──────────────────────────────────────────────────────────────
 
-async function fetchAmc(lat: number, lon: number, radius: number, date: string): Promise<Theater[]> {
-  const AMC_API_KEY = Deno.env.get('AMC_API_KEY')
-  if (!AMC_API_KEY) return []
-
-  const url = `https://api.amctheatres.com/v2/showtimes/views/current-location/${date}/${lat}/${lon}`
-  const res = await fetch(url, {
-    headers: { 'X-AMC-Vendor-Key': AMC_API_KEY, Accept: 'application/json' },
+async function fetchSerpShowtimes(zip: string, date: string, apiKey: string): Promise<Theater[]> {
+  const params = new URLSearchParams({
+    engine:  'google',
+    q:       `movies near ${zip}`,
+    location: zip,
+    hl:      'en',
+    gl:      'us',
+    api_key: apiKey,
   })
-  if (!res.ok) return []
+
+  const res = await fetch(`https://serpapi.com/search.json?${params}`)
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`SerpAPI ${res.status}: ${body.slice(0, 200)}`)
+  }
+
   const data = await res.json()
 
-  const allShowtimes = data?._embedded?.showtimes ?? data?.showtimes ?? []
-  const theatreMap = new Map<string | number, Theater>()
+  // SerpAPI returns showtimes as an array of day buckets.
+  // Each bucket: { day: "Today"|"Tomorrow"|weekday, date: "Nov 8", theaters: [...] }
+  // or: { day, date, movies: [...] } depending on how Google renders it.
+  const buckets: unknown[] = data.showtimes ?? []
+  if (!buckets.length) return []
 
-  for (const s of allShowtimes) {
-    const t = s._embedded?.theatre ?? s.theatre
-    if (!t) continue
-    const id = String(t.id)
+  // Pick the bucket matching the requested date
+  const targetBucket = pickBucket(buckets, date)
+  if (!targetBucket) return []
 
-    if (!theatreMap.has(id)) {
-      theatreMap.set(id, {
-        id: `amc-${id}`,
-        chain: 'amc',
-        name: t.name,
-        address: [t.street, t.city, t.state, t.postalCode].filter(Boolean).join(', '),
-        ticketUrl: `https://www.amctheatres.com/movie-theatres/${id}`,
-        showtimes: [],
-      })
-    }
+  return parseTheaters(targetBucket)
+}
 
-    const theatre = theatreMap.get(id)!
-    const movie = s._embedded?.movie ?? s.movie ?? {}
-    const title = movie.name ?? movie.title ?? s.movieName ?? 'Unknown'
-    const format = s.attributeIds?.[0] ?? s.format ?? 'Standard'
-    const time = s.showDateTimeLocal ?? s.performanceTime ?? s.startTime
-    if (!time) continue
+// ── date bucket matching ──────────────────────────────────────────────────────
 
-    let entry = theatre.showtimes.find((e) => e.movieTitle === title)
-    if (!entry) {
-      entry = { movieTitle: title, formats: [] }
-      theatre.showtimes.push(entry)
-    }
-    let block = entry.formats.find((f) => f.format === format)
-    if (!block) { block = { format, times: [] }; entry.formats.push(block) }
-    block.times.push(fmtTime(time))
+function pickBucket(buckets: unknown[], date: string): Record<string, unknown> | null {
+  const target = new Date(date + 'T12:00:00')
+  const today  = new Date()
+  today.setHours(12, 0, 0, 0)
+  const diffDays = Math.round((target.getTime() - today.getTime()) / 86_400_000)
+
+  // Try matching by day label first
+  const dayLabels: Record<number, string[]> = {
+    0: ['today'],
+    1: ['tomorrow'],
+    2: ['in 2 days'],
+  }
+  const labels = dayLabels[diffDays] ?? []
+
+  for (const bucket of buckets as Record<string, unknown>[]) {
+    const day = String(bucket.day ?? '').toLowerCase()
+    if (labels.some((l) => day.includes(l))) return bucket
+
+    // Fall back to matching the date string (e.g. "Nov 8" vs "2026-11-08")
+    const dateStr = String(bucket.date ?? '')
+    if (dateStr && matchesDate(dateStr, date)) return bucket
   }
 
-  return Array.from(theatreMap.values())
+  // Default to first bucket (today)
+  return (buckets[0] as Record<string, unknown>) ?? null
 }
 
-// ── Cinemark ──────────────────────────────────────────────────────────────────
-
-async function fetchCinemark(lat: number, lon: number, radius: number, date: string): Promise<Theater[]> {
-  // Cinemark's internal mobile/web API — no auth required
-  const nearbyUrl = `https://www.cinemark.com/api/v1/theaters/nearby?lat=${lat}&lng=${lon}&radius=${radius}`
-  const nearbyRes = await fetch(nearbyUrl, {
-    headers: { 'User-Agent': BROWSER_UA, Accept: 'application/json' },
-  })
-  if (!nearbyRes.ok) return []
-  const nearbyData = await nearbyRes.json()
-
-  const theaters: Array<{ id: string; name: string; address: string; city: string; state: string; zip: string; distance?: number }> =
-    nearbyData?.theaters ?? nearbyData?.data ?? []
-
-  if (!theaters.length) return []
-
-  // Fetch showtimes for all theaters in parallel (limit to first 10 to avoid timeout)
-  const results = await Promise.allSettled(
-    theaters.slice(0, 10).map(async (t) => {
-      const addr = [t.address, t.city, t.state, t.zip].filter(Boolean).join(', ')
-      const theater: Theater = {
-        id: `cinemark-${t.id}`,
-        chain: 'cinemark',
-        name: t.name,
-        address: addr,
-        distance: t.distance,
-        ticketUrl: `https://www.cinemark.com/theatre/${t.id}`,
-        showtimes: [],
-      }
-
-      try {
-        const stUrl = `https://www.cinemark.com/api/v1/showtimes/${t.id}/${date}`
-        const stRes = await fetch(stUrl, {
-          headers: { 'User-Agent': BROWSER_UA, Accept: 'application/json' },
-        })
-        if (stRes.ok) {
-          const stData = await stRes.json()
-          const movies: unknown[] = stData?.movies ?? stData?.data?.movies ?? stData?.showtimes ?? []
-
-          for (const m of movies as Record<string, unknown>[]) {
-            const title = (m.title ?? m.name ?? m.movieTitle) as string
-            if (!title) continue
-            const entry: MovieEntry = { movieTitle: title, formats: [] }
-
-            // Cinemark groups by experience/format
-            const experiences: unknown[] = (m.experiences ?? m.formats ?? m.showtimes ?? []) as unknown[]
-            for (const exp of experiences as Record<string, unknown>[]) {
-              const fmt = (exp.experience ?? exp.format ?? exp.name ?? 'Standard') as string
-              const rawTimes: unknown[] = (exp.times ?? exp.showtimes ?? []) as unknown[]
-              const times = rawTimes
-                .map((t: unknown) => {
-                  const ts = (typeof t === 'object' && t !== null)
-                    ? ((t as Record<string, unknown>).time ?? (t as Record<string, unknown>).startTime ?? '') as string
-                    : String(t)
-                  return ts ? fmtTime(ts) : null
-                })
-                .filter(Boolean) as string[]
-
-              if (times.length) entry.formats.push({ format: fmt, times })
-            }
-
-            if (entry.formats.length) theater.showtimes.push(entry)
-          }
-        }
-      } catch {
-        // showtime fetch failed — return theater without showtimes
-      }
-
-      return theater
-    }),
-  )
-
-  return results
-    .filter((r): r is PromiseFulfilledResult<Theater> => r.status === 'fulfilled')
-    .map((r) => r.value)
+function matchesDate(serpDate: string, isoDate: string): boolean {
+  try {
+    const parsed = new Date(`${serpDate} ${new Date().getFullYear()}`)
+    return parsed.toISOString().startsWith(isoDate)
+  } catch {
+    return false
+  }
 }
 
-// ── Regal ─────────────────────────────────────────────────────────────────────
+// ── theater/showtime parsing ──────────────────────────────────────────────────
+// Google's panel can be structured two ways depending on the search:
+//   A) theater-first: bucket.theaters[].{name,address,movies[].{name,showing[].{type,time[]}}}
+//   B) movie-first:   bucket.movies[].{name,showing[].{theater.{name,address},type,time[]}}
+// We handle both.
 
-async function fetchRegal(lat: number, lon: number, radius: number, date: string): Promise<Theater[]> {
-  // Regal uses DX (digital experience) platform — their internal API
-  const nearbyUrl = `https://www.regmovies.com/api/v1/theaters/search?lat=${lat}&lon=${lon}&radius=${radius}`
-  const nearbyRes = await fetch(nearbyUrl, {
-    headers: { 'User-Agent': BROWSER_UA, Accept: 'application/json' },
+function parseTheaters(bucket: Record<string, unknown>): Theater[] {
+  if (Array.isArray(bucket.theaters) && bucket.theaters.length) {
+    return parseTheaterFirst(bucket.theaters as Record<string, unknown>[])
+  }
+  if (Array.isArray(bucket.movies) && bucket.movies.length) {
+    return parseMovieFirst(bucket.movies as Record<string, unknown>[])
+  }
+  return []
+}
+
+function parseTheaterFirst(theaters: Record<string, unknown>[]): Theater[] {
+  return theaters.map((t, i) => {
+    const movies: MovieEntry[] = []
+
+    for (const m of (t.movies ?? []) as Record<string, unknown>[]) {
+      const title = String(m.name ?? m.title ?? 'Unknown')
+      const formats: ShowBlock[] = []
+
+      for (const s of (m.showing ?? m.showtimes ?? []) as Record<string, unknown>[]) {
+        const fmt = String(s.type ?? s.format ?? 'Standard')
+        const times = normaliseTimeArray(s.time ?? s.times ?? [])
+        if (times.length) formats.push({ format: fmt, times })
+      }
+
+      if (formats.length) movies.push({ movieTitle: title, formats })
+    }
+
+    const name = String(t.name ?? `Theater ${i + 1}`)
+    return {
+      id:        `serp-${i}-${name.replace(/\W/g, '').toLowerCase()}`,
+      chain:     detectChain(name),
+      name,
+      address:   String(t.address ?? ''),
+      distance:  parseDistance(t.distance as string),
+      ticketUrl: t.link as string | undefined,
+      showtimes: movies,
+    }
   })
-  if (!nearbyRes.ok) return []
-  const nearbyData = await nearbyRes.json()
+}
 
-  const theaters: Array<{ id: string; slug?: string; name: string; address1?: string; city?: string; state?: string; zip?: string; distance?: number }> =
-    nearbyData?.theaters ?? nearbyData?.data ?? nearbyData?.results ?? []
+function parseMovieFirst(movies: Record<string, unknown>[]): Theater[] {
+  // Pivot: collect theaters, attach movies to them
+  const theaterMap = new Map<string, Theater>()
 
-  if (!theaters.length) return []
+  for (const m of movies) {
+    const title = String(m.name ?? m.title ?? 'Unknown')
 
-  const results = await Promise.allSettled(
-    theaters.slice(0, 10).map(async (t) => {
-      const addr = [t.address1, t.city, t.state, t.zip].filter(Boolean).join(', ')
-      const theater: Theater = {
-        id: `regal-${t.id}`,
-        chain: 'regal',
-        name: t.name,
-        address: addr,
-        distance: t.distance,
-        ticketUrl: t.slug
-          ? `https://www.regmovies.com/theaters/${t.slug}/${t.id}`
-          : `https://www.regmovies.com`,
-        showtimes: [],
-      }
+    for (const s of (m.showing ?? m.showtimes ?? []) as Record<string, unknown>[]) {
+      const theater = (s.theater ?? s.theatre ?? {}) as Record<string, unknown>
+      const name    = String(theater.name ?? 'Unknown Theater')
+      const key     = name.toLowerCase().replace(/\W/g, '')
 
-      try {
-        const stUrl = `https://www.regmovies.com/api/v1/showtimes/theater/${t.id}/${date}`
-        const stRes = await fetch(stUrl, {
-          headers: { 'User-Agent': BROWSER_UA, Accept: 'application/json' },
+      if (!theaterMap.has(key)) {
+        theaterMap.set(key, {
+          id:        `serp-${key}`,
+          chain:     detectChain(name),
+          name,
+          address:   String(theater.address ?? ''),
+          distance:  parseDistance(theater.distance as string),
+          ticketUrl: theater.link as string | undefined,
+          showtimes: [],
         })
-        if (stRes.ok) {
-          const stData = await stRes.json()
-          const movies: unknown[] = stData?.movies ?? stData?.data ?? stData?.showtimes ?? []
-
-          for (const m of movies as Record<string, unknown>[]) {
-            const title = (m.title ?? m.name ?? m.movieTitle) as string
-            if (!title) continue
-            const entry: MovieEntry = { movieTitle: title, formats: [] }
-
-            const variants: unknown[] = (m.variants ?? m.formats ?? m.experiences ?? []) as unknown[]
-            for (const v of variants as Record<string, unknown>[]) {
-              const fmt = (v.format ?? v.name ?? v.experience ?? 'Standard') as string
-              const rawTimes: unknown[] = (v.times ?? v.showtimes ?? []) as unknown[]
-              const times = rawTimes
-                .map((t: unknown) => {
-                  const ts = typeof t === 'string' ? t :
-                    (t as Record<string, unknown>)?.performanceTime as string ?? ''
-                  return ts ? fmtTime(ts) : null
-                })
-                .filter(Boolean) as string[]
-
-              if (times.length) entry.formats.push({ format: fmt, times })
-            }
-
-            if (entry.formats.length) theater.showtimes.push(entry)
-          }
-        }
-      } catch {
-        // showtime fetch failed
       }
 
-      return theater
-    }),
-  )
+      const fmt   = String(s.type ?? s.format ?? 'Standard')
+      const times = normaliseTimeArray(s.time ?? s.times ?? [])
+      if (!times.length) continue
 
-  return results
-    .filter((r): r is PromiseFulfilledResult<Theater> => r.status === 'fulfilled')
-    .map((r) => r.value)
+      const entry = theaterMap.get(key)!
+      let movie = entry.showtimes.find((e) => e.movieTitle === title)
+      if (!movie) { movie = { movieTitle: title, formats: [] }; entry.showtimes.push(movie) }
+
+      let block = movie.formats.find((f) => f.format === fmt)
+      if (!block) { block = { format: fmt, times: [] }; movie.formats.push(block) }
+      block.times.push(...times)
+    }
+  }
+
+  return Array.from(theaterMap.values())
+}
+
+function normaliseTimeArray(raw: unknown): string[] {
+  if (!raw) return []
+  const arr = Array.isArray(raw) ? raw : [raw]
+  return arr
+    .map((t) => (typeof t === 'string' ? t : String((t as Record<string,unknown>)?.time ?? t)))
+    .filter(Boolean)
 }
 
 // ── main ──────────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS })
-  if (req.method !== 'GET') return new Response('Method not allowed', { status: 405, headers: CORS })
+  if (req.method !== 'GET')    return new Response('Method not allowed', { status: 405, headers: CORS })
 
-  const url = new URL(req.url)
-  const lat = parseFloat(url.searchParams.get('lat') ?? '')
-  const lon = parseFloat(url.searchParams.get('lon') ?? '')
-  const radius = parseFloat(url.searchParams.get('radius') ?? '15')
-  const date = url.searchParams.get('date') ?? todayStr()
-  const chainsParam = url.searchParams.get('chains') ?? 'amc,cinemark,regal'
-  const chains = chainsParam.split(',').map((c) => c.trim().toLowerCase())
+  const SERPAPI_KEY = Deno.env.get('SERPAPI_KEY')
+  if (!SERPAPI_KEY) {
+    return new Response(JSON.stringify({ error: 'SERPAPI_KEY secret is not configured' }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json', ...CORS },
+    })
+  }
 
-  if (isNaN(lat) || isNaN(lon)) {
-    return new Response(JSON.stringify({ error: 'lat and lon are required' }), {
+  const url  = new URL(req.url)
+  const zip  = url.searchParams.get('zip')?.trim()
+  const date = url.searchParams.get('date') ?? new Date().toISOString().split('T')[0]
+
+  if (!zip) {
+    return new Response(JSON.stringify({ error: 'zip param is required' }), {
       status: 400,
       headers: { 'Content-Type': 'application/json', ...CORS },
     })
   }
 
-  const fetchers: Promise<Theater[]>[] = []
-  if (chains.includes('amc'))      fetchers.push(fetchAmc(lat, lon, radius, date).catch(() => []))
-  if (chains.includes('cinemark')) fetchers.push(fetchCinemark(lat, lon, radius, date).catch(() => []))
-  if (chains.includes('regal'))    fetchers.push(fetchRegal(lat, lon, radius, date).catch(() => []))
+  try {
+    const theaters = await fetchSerpShowtimes(zip, date, SERPAPI_KEY)
+    theaters.sort((a, b) => (a.distance ?? 999) - (b.distance ?? 999))
 
-  const allResults = await Promise.all(fetchers)
-  const theaters = allResults.flat()
-
-  // Sort by distance (theaters without distance go to end)
-  theaters.sort((a, b) => (a.distance ?? 999) - (b.distance ?? 999))
-
-  return new Response(JSON.stringify({ theaters }), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json', ...CORS },
-  })
+    return new Response(JSON.stringify({ theaters }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json', ...CORS },
+    })
+  } catch (err) {
+    return new Response(JSON.stringify({ error: String(err) }), {
+      status: 502,
+      headers: { 'Content-Type': 'application/json', ...CORS },
+    })
+  }
 })

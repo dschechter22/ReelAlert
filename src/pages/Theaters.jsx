@@ -16,14 +16,6 @@ const CHAINS = [
 
 const CHAIN_MAP = Object.fromEntries(CHAINS.map((c) => [c.value, c]))
 
-const RADIUS_OPTIONS = [
-  { value: 5,  label: '5 mi' },
-  { value: 10, label: '10 mi' },
-  { value: 15, label: '15 mi' },
-  { value: 25, label: '25 mi' },
-  { value: 50, label: '50 mi' },
-]
-
 const FORMAT_STYLES = {
   IMAX:    'bg-blue-500/15 text-blue-400 border-blue-500/25',
   Dolby:   'bg-purple-500/15 text-purple-400 border-purple-500/25',
@@ -61,7 +53,6 @@ function nextSevenDays() {
 export default function Theaters() {
   const [inputZip, setInputZip] = useState('')
   const [searchedZip, setSearchedZip] = useState('')
-  const [radius, setRadius] = useState(15)
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
   const [chainFilter, setChainFilter] = useState('all')
   const [showFilters, setShowFilters] = useState(false)
@@ -83,22 +74,22 @@ export default function Theaters() {
         return t.chain === chainFilter
       })
 
-  // Chain counts for badge display
+  // Chain counts for filter badges
   const chainCounts = allTheaters.reduce((acc, t) => {
     const key = ['amc', 'cinemark', 'regal', 'alamo'].includes(t.chain) ? t.chain : 'other'
     acc[key] = (acc[key] ?? 0) + 1
     return acc
   }, {})
 
-  const search = useCallback(async (zip, date, r) => {
+  const search = useCallback(async (zip, date) => {
     if (!zip?.trim()) return
     setLoading(true)
     setError(null)
     setAllTheaters([])
     setSelectedTheater(null)
     try {
-      const results = await getTheatersNearZip(zip.trim(), date, r)
-      if (!results.length) throw new Error(`No theaters found within ${r} miles of ${zip}.`)
+      const results = await getTheatersNearZip(zip.trim(), date)
+      if (!results.length) throw new Error(`No theaters found near ${zip}. Try a different zip code.`)
       setAllTheaters(results)
       setSelectedTheater(results[0])
     } catch (err) {
@@ -111,17 +102,12 @@ export default function Theaters() {
   function handleSearch(e) {
     e.preventDefault()
     setSearchedZip(inputZip)
-    search(inputZip, selectedDate, radius)
+    search(inputZip, selectedDate)
   }
 
   function handleDateChange(date) {
     setSelectedDate(date)
-    if (searchedZip) search(searchedZip, date, radius)
-  }
-
-  function handleRadiusChange(r) {
-    setRadius(r)
-    if (searchedZip) search(searchedZip, selectedDate, r)
+    if (searchedZip) search(searchedZip, date)
   }
 
   const showtimes = selectedTheater?.showtimes ?? []
@@ -175,43 +161,22 @@ export default function Theaters() {
             </button>
           </form>
 
-          {/* Radius + date row — shown after first search */}
+          {/* Date chips — shown after first search */}
           {(allTheaters.length > 0 || loading) && (
-            <div className="space-y-2">
-              {/* Radius chips */}
-              <div className="flex gap-2 overflow-x-auto scrollbar-none">
-                <span className="flex-shrink-0 text-xs font-body text-text-secondary self-center">Radius:</span>
-                {RADIUS_OPTIONS.map((r) => (
-                  <button
-                    key={r.value}
-                    onClick={() => handleRadiusChange(r.value)}
-                    className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-body border transition-colors ${
-                      radius === r.value
-                        ? 'bg-accent/15 border-accent/40 text-accent'
-                        : 'bg-surface border-accent-secondary/20 text-text-secondary hover:border-accent/25'
-                    }`}
-                  >
-                    {r.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Date chips */}
-              <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-                {dates.map((d) => (
-                  <button
-                    key={d.value}
-                    onClick={() => handleDateChange(d.value)}
-                    className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-body border transition-colors ${
-                      selectedDate === d.value
-                        ? 'bg-accent/15 border-accent/40 text-accent'
-                        : 'bg-surface border-accent-secondary/20 text-text-secondary hover:border-accent/25'
-                    }`}
-                  >
-                    {d.label}
-                  </button>
-                ))}
-              </div>
+            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+              {dates.map((d) => (
+                <button
+                  key={d.value}
+                  onClick={() => handleDateChange(d.value)}
+                  className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-body border transition-colors ${
+                    selectedDate === d.value
+                      ? 'bg-accent/15 border-accent/40 text-accent'
+                      : 'bg-surface border-accent-secondary/20 text-text-secondary hover:border-accent/25'
+                  }`}
+                >
+                  {d.label}
+                </button>
+              ))}
             </div>
           )}
 
@@ -291,8 +256,8 @@ export default function Theaters() {
           <>
             {/* Theater count summary */}
             <p className="text-xs font-body text-text-secondary mb-3">
-              {allTheaters.length} theater{allTheaters.length !== 1 ? 's' : ''} within {radius} miles of {searchedZip}
-              {chainFilter !== 'all' && ` · filtered to ${CHAIN_MAP[chainFilter]?.label ?? chainFilter}`}
+              {allTheaters.length} theater{allTheaters.length !== 1 ? 's' : ''} near {searchedZip}
+              {chainFilter !== 'all' && ` · ${CHAIN_MAP[chainFilter]?.label ?? chainFilter} only`}
             </p>
 
             {/* Theater selector list */}
@@ -390,7 +355,7 @@ export default function Theaters() {
             {theaters.length === 0 && chainFilter !== 'all' && (
               <div className="flex flex-col items-center py-12 text-center gap-3">
                 <p className="font-body text-text-secondary text-sm">
-                  No {CHAIN_MAP[chainFilter]?.label} theaters within {radius} miles.
+                  No {CHAIN_MAP[chainFilter]?.label} theaters found near {searchedZip}.
                 </p>
                 <button
                   onClick={() => setChainFilter('all')}

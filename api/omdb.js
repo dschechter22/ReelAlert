@@ -29,6 +29,11 @@ export default async function handler(req, res) {
     ])
 
     // Parse OMDb
+    if (!omdbData) {
+      console.error('[omdb-proxy] OMDb fetch failed (network error)')
+    } else if (omdbData.Response === 'False') {
+      console.error('[omdb-proxy] OMDb API error:', omdbData.Error)
+    }
     const rtEntry = (omdbData?.Ratings || []).find((r) => r.Source === 'Rotten Tomatoes')
     const imdb_score =
       omdbData?.imdbRating && omdbData.imdbRating !== 'N/A'
@@ -58,6 +63,7 @@ export default async function handler(req, res) {
       imdb_score: Number.isFinite(imdb_score) ? imdb_score : null,
       rt_critic: Number.isFinite(rt_critic) ? rt_critic : null,
       letterboxd_score: Number.isFinite(letterboxd_score) ? letterboxd_score : null,
+      _omdb_error: omdbData?.Response === 'False' ? omdbData.Error : undefined,
     })
   } catch {
     return res.status(200).json({ imdb_score: null, rt_critic: null, letterboxd_score: null })

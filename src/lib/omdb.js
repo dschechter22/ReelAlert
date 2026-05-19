@@ -14,6 +14,10 @@ export async function fetchOMDbRatings(imdbId) {
     }
     const data = await res.json()
 
+    if (data._omdb_error) {
+      console.error(`[omdb] API error for ${imdbId}: ${data._omdb_error}`)
+    }
+
     const result = {
       imdb_score: Number.isFinite(data.imdb_score) ? data.imdb_score : null,
       rt_critic: Number.isFinite(data.rt_critic) ? data.rt_critic : null,

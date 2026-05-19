@@ -738,7 +738,7 @@ export default function Suggestions() {
 
           {/* Collapsible filter panel */}
           {filterOpen && (
-            <div className="mb-3 rounded-2xl bg-surface border border-accent-secondary/15 p-4 space-y-4">
+            <div className="mb-3 rounded-2xl bg-surface border border-accent-secondary/15 p-4 space-y-4 overflow-y-auto" style={{ maxHeight: 'calc(100dvh - 180px)' }}>
 
               {/* Presets */}
               <div>

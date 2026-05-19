@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
-import { getMovieKeywords } from '../lib/tmdb'
+import { getMovieDetails } from '../lib/tmdb'
 import { buildTasteProfile } from '../lib/tasteProfile'
 import { useAuth } from './AuthContext'
 
@@ -43,17 +43,41 @@ export function RatingsProvider({ children }) {
     // Optimistic update
     setRatings((prev) => ({ ...prev, [key]: ratingValue }))
 
-    // Fetch keywords if not already on the movie object
+    // Fetch full details when needed — gets keywords, cast, production data in one call
     let keywords = movie.keywords || []
-    if (!keywords.length && tmdbId) {
-      keywords = await getMovieKeywords(tmdbId).catch(() => [])
+    let enrichment = {
+      release_year:   movie.release_date ? new Date(movie.release_date).getFullYear() : null,
+      director_name:  movie.director?.name ?? null,
+      top_cast:       (movie.cast || []).slice(0, 5).map((c) => (typeof c === 'object' ? c.name : c)).filter(Boolean),
+      origin_country: movie.origin_country ?? null,
+      studio:         movie.studio ?? null,
+      collection:     movie.collection ?? null,
+    }
+
+    const needsFetch = !keywords.length || !enrichment.origin_country
+    if (needsFetch && tmdbId) {
+      const details = await getMovieDetails(tmdbId).catch(() => null)
+      if (details) {
+        if (!keywords.length)
+          keywords = (details.keywords?.keywords || []).map((k) => k.name)
+        const dir = details.credits?.crew?.find((c) => c.job === 'Director')
+        enrichment = {
+          release_year:   details.release_date ? new Date(details.release_date).getFullYear() : enrichment.release_year,
+          director_name:  dir?.name ?? enrichment.director_name,
+          top_cast:       enrichment.top_cast.length
+            ? enrichment.top_cast
+            : (details.credits?.cast || []).slice(0, 5).map((c) => c.name).filter(Boolean),
+          origin_country: details.production_countries?.[0]?.name ?? null,
+          studio:         details.production_companies?.[0]?.name ?? null,
+          collection:     details.belongs_to_collection?.name ?? null,
+        }
+      }
     }
 
     const genreIds = (movie.genres || []).map((g) => (typeof g === 'object' ? g.id : g))
     const directorId = movie.director?.id ?? null
 
     const defaultWeightMap = { liked: 1, disliked: -1, seen: 0, not_interested: -0.5 }
-    // Use explicit taste_weight from movie object (e.g. Letterboxd import) or derive from rating type
     const tasteWeight = movie.taste_weight != null ? movie.taste_weight : defaultWeightMap[ratingValue] ?? 0
 
     const row = {
@@ -67,6 +91,7 @@ export function RatingsProvider({ children }) {
       rating: ratingValue,
       taste_weight: tasteWeight,
       rated_at: new Date().toISOString(),
+      ...enrichment,
     }
 
     const { error } = await supabase

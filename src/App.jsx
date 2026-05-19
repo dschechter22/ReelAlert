@@ -13,6 +13,7 @@ import Settings from './pages/Settings.jsx'
 import TermsOfService from './pages/TermsOfService.jsx'
 import PrivacyPolicy from './pages/PrivacyPolicy.jsx'
 import Suggestions from './pages/Suggestions.jsx'
+import Stats from './pages/Stats.jsx'
 import ResetPassword from './pages/ResetPassword.jsx'
 
 export default function App() {
@@ -72,6 +73,14 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <Suggestions />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/stats"
+              element={
+                <ProtectedRoute>
+                  <Stats />
                 </ProtectedRoute>
               }
             />

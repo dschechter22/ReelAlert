@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useRatings } from '../contexts/RatingsContext'
 import { useMovies, useWatchlist } from '../hooks/useMovies'
 import TabBar from '../components/TabBar'
-import { Bookmark, Trash2, ChevronRight, ThumbsUp, ThumbsDown, Eye, MinusCircle } from 'lucide-react'
+import { Bookmark, Trash2, ChevronRight, ThumbsUp, ThumbsDown, Eye, MinusCircle, BarChart3 } from 'lucide-react'
 import { MOCK_MOVIES } from '../lib/mockData'
 import { TMDB_GENRES } from '../lib/tmdb'
 
@@ -120,12 +120,26 @@ export default function MyFilms() {
             onBrowse={() => navigate('/dashboard')}
           />
         ) : (
-          <RatedContent
-            rows={sortedRated}
-            allCount={ratingRows.length}
-            onRemove={removeRating}
-            onNavigate={(tmdbId) => navigate(`/movie/tmdb-${tmdbId}`)}
-          />
+            <>
+            {ratingRows.length > 0 && (
+              <button
+                onClick={() => navigate('/stats')}
+                className="w-full mb-4 flex items-center justify-between px-4 py-3 bg-surface rounded-2xl border border-accent-secondary/15 hover:border-accent/40 transition-colors group"
+              >
+                <div className="flex items-center gap-3">
+                  <BarChart3 size={18} className="text-accent" />
+                  <span className="font-body font-medium text-text text-sm">View Taste Stats</span>
+                </div>
+                <ChevronRight size={16} className="text-text-secondary group-hover:text-text transition-colors" />
+              </button>
+            )}
+            <RatedContent
+              rows={sortedRated}
+              allCount={ratingRows.length}
+              onRemove={removeRating}
+              onNavigate={(tmdbId) => navigate(`/movie/tmdb-${tmdbId}`)}
+            />
+          </>
         )}
       </main>
 

@@ -282,7 +282,9 @@ export default function Settings() {
       if (!res.ok) throw new Error(data.error ?? `Failed (${res.status})`)
 
       const films = data.films ?? []
+      const warning = data.warning ?? null
       if (!films.length) throw new Error('No rated films found on that profile. Make sure the account is public.')
+      if (warning) setLbUsernameResult({ warning })
 
       // Import using same logic as CSV — map rating → bucket + taste_weight
       let imported = 0, failed = 0
@@ -315,7 +317,7 @@ export default function Settings() {
         }
       }
 
-      setLbUsernameResult({ imported, failed })
+      setLbUsernameResult((prev) => ({ ...prev, imported, failed }))
     } catch (err) {
       setLbUsernameResult({ error: err.message })
     } finally {
@@ -591,11 +593,19 @@ export default function Settings() {
               </button>
             </form>
             {lbUsernameResult && (
-              <p className={`font-body text-sm ${lbUsernameResult.error ? 'text-red-400' : 'text-emerald-400'}`}>
-                {lbUsernameResult.error
-                  ? `Import failed: ${lbUsernameResult.error}`
-                  : `Imported ${lbUsernameResult.imported} films${lbUsernameResult.failed ? ` · ${lbUsernameResult.failed} not matched` : ''}.`}
-              </p>
+              <div className="space-y-1">
+                {lbUsernameResult.warning && (
+                  <p className="font-body text-xs text-amber-400">{lbUsernameResult.warning}</p>
+                )}
+                {lbUsernameResult.error && (
+                  <p className="font-body text-sm text-red-400">{lbUsernameResult.error}</p>
+                )}
+                {lbUsernameResult.imported != null && (
+                  <p className="font-body text-sm text-emerald-400">
+                    Imported {lbUsernameResult.imported} films{lbUsernameResult.failed ? ` · ${lbUsernameResult.failed} not matched` : ''}.
+                  </p>
+                )}
+              </div>
             )}
           </div>
 
